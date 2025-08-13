@@ -22,7 +22,7 @@ class SearchCLI:
         
     def run_interactive(self):
         """Run the interactive CLI loop."""
-        print(f"🔍 Interactive Search CLI (max URLs: {self.max_urls})")
+        print(f"Interactive Search CLI (max URLs: {self.max_urls})")
         print("Type 'help' for commands, 'quit' to exit")
         
         while True:
@@ -76,6 +76,8 @@ Examples:
   > set max_urls 20
   > help
   > quit
+
+Storage: Search results are automatically saved to MongoDB via the storage API.
         """
         print(help_text)
     

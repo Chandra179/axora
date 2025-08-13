@@ -8,6 +8,7 @@ import urllib.parse
 import urllib.request
 from typing import List, Dict
 import re
+from storage.database import SearchResultsDB
 
 
 class DDGLiteSearch:
@@ -16,6 +17,7 @@ class DDGLiteSearch:
     def __init__(self, max_urls: int = 10):
         self.max_urls = max_urls
         self.base_url = "https://lite.duckduckgo.com/lite/"
+        self.db = SearchResultsDB()
         
     def search(self, query: str) -> List[Dict[str, str]]:
         """
@@ -54,7 +56,13 @@ class DDGLiteSearch:
             results = self._parse_results(html_content)
             
             # Limit results to max_urls
-            return results[:self.max_urls]
+            limited_results = results[:self.max_urls]
+            
+            # Store results
+            if limited_results:
+                self._store_search_results(query, limited_results)
+            
+            return limited_results
             
         except Exception as e:
             print(f"Error performing search: {e}", file=sys.stderr)
@@ -121,5 +129,11 @@ class DDGLiteSearch:
                     })
                     
         return results
-
-
+    
+    def _store_search_results(self, query: str, results: List[Dict[str, str]]):
+        """Store search results directly in database."""
+        try:
+            result_id = self.db.store_search_results(query, results)
+            print(f"Successfully stored {len(results)} search results for query: {query} (ID: {result_id})")
+        except Exception as e:
+            print(f"Error storing search results: {e}", file=sys.stderr)

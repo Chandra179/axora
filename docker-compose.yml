@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:8.0
+    container_name: axora-mongodb
+    restart: unless-stopped
+    ports:
+      - "${MONGODB_PORT}:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGODB_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGODB_PASSWORD}
+      MONGO_INITDB_DATABASE: axora_search
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - axora-network
+
+  mongo-express:
+    image: mongo-express:latest
+    container_name: axora-mongo-express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGODB_USERNAME}
+      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGODB_PASSWORD}
+      ME_CONFIG_MONGODB_URL: mongodb://${MONGODB_USERNAME}:${MONGODB_PASSWORD}@mongodb:27017/
+      ME_CONFIG_BASICAUTH: false
+    depends_on:
+      - mongodb
+    networks:
+      - axora-network
+
+  app:
+    build: .
+    container_name: axora-app
+    ports:
+      - "${APP_PORT}:5000"
+    environment:
+      MONGODB_URL: ${MONGODB_URL}
+    depends_on:
+      - mongodb
+    networks:
+      - axora-network
+    stdin_open: true
+    tty: true
+
+volumes:
+  mongodb_data:
+  mongodb_config:
+
+networks:
+  axora-network:
+    driver: bridge
