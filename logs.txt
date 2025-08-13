@@ -1,37 +1,4 @@
-(venv) mando@mando-LOQ-15IRH8:~/Work/axora$ python3 cli/cli.py
-Traceback (most recent call last):
-  File "/home/mando/Work/axora/cli/cli.py", line 121, in <module>
-    main()
-  File "/home/mando/Work/axora/cli/cli.py", line 116, in main
-    cli = SearchCLI(max_urls=args.max_urls)
-          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/mando/Work/axora/cli/cli.py", line 20, in __init__
-    self.searcher = DDGLiteSearch(max_urls=max_urls)
-                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/mando/Work/axora/search/search.py", line 21, in __init__
-    self.db = SearchResultsDB() if use_storage else None
-              ^^^^^^^^^^^^^^^^^
-  File "/home/mando/Work/axora/storage/database.py", line 32, in __init__
-    self.collection.create_index("timestamp")
-  File "/home/mando/Work/axora/venv/lib/python3.12/site-packages/pymongo/collection.py", line 2136, in create_index
-    return self.__create_indexes([index], session, **cmd_options)[0]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/mando/Work/axora/venv/lib/python3.12/site-packages/pymongo/_csot.py", line 107, in csot_wrapper
-    return func(self, *args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/mando/Work/axora/venv/lib/python3.12/site-packages/pymongo/collection.py", line 2009, in __create_indexes
-    self._command(
-  File "/home/mando/Work/axora/venv/lib/python3.12/site-packages/pymongo/collection.py", line 308, in _command
-    return conn.command(
-           ^^^^^^^^^^^^^
-  File "/home/mando/Work/axora/venv/lib/python3.12/site-packages/pymongo/helpers.py", line 322, in inner
-    return func(*args, **kwargs)
-           ^^^^^^^^^^^^^^^^^^^^^
-  File "/home/mando/Work/axora/venv/lib/python3.12/site-packages/pymongo/pool.py", line 968, in command
-    return command(
-           ^^^^^^^^
-  File "/home/mando/Work/axora/venv/lib/python3.12/site-packages/pymongo/network.py", line 192, in command
-    helpers._check_command_response(
-  File "/home/mando/Work/axora/venv/lib/python3.12/site-packages/pymongo/helpers.py", line 230, in _check_command_response
-    raise OperationFailure(errmsg, code, response, max_wire_version)
-pymongo.errors.OperationFailure: Command createIndexes requires authentication, full error: {'ok': 0.0, 'errmsg': 'Command createIndexes requires authentication', 'code': 13, 'codeName': 'Unauthorized'}
+python scrapper/scraping.py
+python -m sentiment.sentiment
+python cli/cli.py
+python crawler/crawler.py

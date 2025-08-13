@@ -1,0 +1,6 @@
+logs.txt
+.gitignore
+.env
+venv
+venv/
+/venv
