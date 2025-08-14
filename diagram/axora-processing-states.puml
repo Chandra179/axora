@@ -1,0 +1,77 @@
+@startuml Axora Processing Pipeline States
+
+title Axora Query and URL Processing State Transitions
+
+' Query Processing States
+state QCreated as "Query Created"
+state QSearching as "Search Processing"
+state QProcessing as "Background Processing"
+state QCompleted as "Query Completed"
+state QFailed as "Query Failed"
+
+[*] --> QCreated : User submits query
+QCreated --> QSearching : Search module starts
+QSearching --> QProcessing : URLs found & stored
+QSearching --> QFailed : Search API error
+QProcessing --> QCompleted : All URLs processed
+QProcessing --> QFailed : Critical processing error
+QFailed --> [*]
+QCompleted --> [*]
+
+note right of QProcessing
+    Query stays in processing while
+    URLs are being scraped, crawled,
+    and analyzed in background
+end note
+
+' URL Processing States
+state UDiscovered as "URL Discovered"
+state UScraping as "Content Scraping"
+state UScraped as "Content Scraped"
+state UCrawling as "Crawling Links"
+state UCrawled as "Links Crawled"
+state UCompleted as "URL Completed"
+state UFailed as "URL Failed"
+
+UDiscovered --> UScraping : Scraper picks up URL
+UScraping --> UScraped : Content extracted successfully
+UScraping --> UFailed : HTTP error, timeout,\nor parsing failure
+UScraped --> UCrawling : Crawler starts link discovery
+UCrawling --> UCrawled : New URLs discovered & stored
+UCrawling --> UFailed : Robots.txt violation\nor crawl depth exceeded
+UCrawled --> UCompleted : Processing complete
+
+note right of UCrawling
+    Crawler respects robots.txt
+    and depth limits (default: 2)
+    Creates new URL records
+    with incremented depth_level
+end note
+
+
+' Error Handling & Retry Logic
+state RetryQueue as "Retry Queue"
+state MaxRetries as "Max Retries Reached"
+
+UFailed --> RetryQueue : Retryable error\n(network, timeout)
+RetryQueue --> UScraping : Retry attempt
+RetryQueue --> MaxRetries : Max retries exceeded
+
+note right of RetryQueue
+    Configurable retry logic:
+    - Network timeouts
+    - HTTP 5xx errors
+    - Rate limiting
+    
+    Non-retryable errors:
+    - HTTP 4xx errors
+    - Content parsing failures
+    - Robots.txt violations
+end note
+
+' Cross-package relationships
+QProcessing --> UDiscovered : Creates URL processing jobs
+UCompleted --> QProcessing : Contributes to query completion
+UFailed --> QProcessing : May affect query status
+
+@enduml

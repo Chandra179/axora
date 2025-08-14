@@ -33,8 +33,23 @@ class URLsCollection:
             self.collection.create_index("status")
             self.collection.create_index([("url", 1), ("query_id", 1)], unique=True)  # Deduplication
             self.collection.create_index("scraped_at")
+            self.collection.create_index("normalized_url", unique=True)  # Global URL deduplication
         except Exception as e:
             print(f"Warning: Could not create URLs collection indexes: {e}")
+    
+    def _normalize_url(self, url: str) -> str:
+        """Normalize URL by removing fragments and query parameters."""
+        from urllib.parse import urlparse, urlunparse
+        parsed = urlparse(url)
+        normalized = urlunparse((
+            parsed.scheme,
+            parsed.netloc.lower(),
+            parsed.path.rstrip('/') or '/',
+            '',  # params
+            '',  # query
+            ''   # fragment
+        ))
+        return normalized
     
     def add_urls_from_search(self, query_id: str, search_results: List[Dict]) -> List[str]:
         """
@@ -54,8 +69,11 @@ class URLsCollection:
             if not url:
                 continue
             
+            normalized_url = self._normalize_url(url)
+            
             document = {
                 "url": url,
+                "normalized_url": normalized_url,
                 "query_id": ObjectId(query_id),
                 "source": "search",
                 "status": "pending",
@@ -70,9 +88,9 @@ class URLsCollection:
             }
             
             try:
-                # Use upsert to handle deduplication
+                # Use upsert to handle deduplication based on normalized URL
                 result = self.collection.update_one(
-                    {"url": url, "query_id": ObjectId(query_id)},
+                    {"normalized_url": normalized_url},
                     {"$setOnInsert": document},
                     upsert=True
                 )
@@ -104,8 +122,11 @@ class URLsCollection:
             if not url:
                 continue
             
+            normalized_url = self._normalize_url(url)
+            
             document = {
                 "url": url,
+                "normalized_url": normalized_url,
                 "query_id": ObjectId(query_id),
                 "source": "crawl",
                 "status": "pending",
@@ -120,9 +141,9 @@ class URLsCollection:
             }
             
             try:
-                # Use upsert to handle deduplication
+                # Use upsert to handle deduplication based on normalized URL
                 result = self.collection.update_one(
-                    {"url": url, "query_id": ObjectId(query_id)},
+                    {"normalized_url": normalized_url},
                     {"$setOnInsert": document},
                     upsert=True
                 )
@@ -134,6 +155,42 @@ class URLsCollection:
                 print(f"Warning: Could not insert crawled URL {url}: {e}")
         
         return inserted_ids
+    
+    def url_exists(self, normalized_url: str) -> bool:
+        """
+        Check if a normalized URL already exists in the database.
+        
+        Args:
+            normalized_url: The normalized URL to check
+            
+        Returns:
+            True if URL exists, False otherwise
+        """
+        return self.collection.count_documents({"normalized_url": normalized_url}, limit=1) > 0
+    
+    def batch_check_urls_exist(self, normalized_urls: List[str]) -> Dict[str, bool]:
+        """
+        Check multiple URLs for existence in a single database query.
+        
+        Args:
+            normalized_urls: List of normalized URLs to check
+            
+        Returns:
+            Dictionary mapping URL to existence status
+        """
+        if not normalized_urls:
+            return {}
+        
+        # Query database for all URLs in batch
+        existing_docs = self.collection.find(
+            {"normalized_url": {"$in": normalized_urls}},
+            {"normalized_url": 1}
+        )
+        
+        existing_urls = {doc["normalized_url"] for doc in existing_docs}
+        
+        # Return mapping of all URLs to their existence status
+        return {url: url in existing_urls for url in normalized_urls}
     
     def get_pending_urls(self, query_id: str = None, limit: int = 50) -> List[Dict]:
         """

@@ -1,0 +1,76 @@
+@startuml Axora_Data_Flow
+
+actor User
+participant "CLI Module" as CLI
+participant "Search Module" as Search
+participant "DuckDuckGo API" as DDG
+participant "Storage Module" as Storage
+database "MongoDB" as DB
+participant "Scraper Module" as Scraper
+participant "Crawler Module" as Crawler
+participant "Web Content" as Web
+
+== Search Phase ==
+User -> CLI : search "query"
+CLI -> Search : execute_search(query)
+Search -> DDG : GET/POST requests (up to 20 pages)
+DDG --> Search : URLs + metadata
+Search -> Storage : store_query(query_id, status="pending")
+Storage -> DB : INSERT queries collection
+Search -> Storage : store_urls(urls, status="pending")
+Storage -> DB : INSERT urls collection
+CLI --> User : Query submitted (query_id)
+
+== Background Processing Phase ==
+note over Search,Crawler
+  Async background processing begins
+end note
+
+loop For each pending URL
+  Search -> Scraper : trigger_scraping(url_id)
+  Scraper -> Storage : update_url_status("processing")
+  Storage -> DB : UPDATE urls collection
+  Scraper -> Web : fetch_content(url)
+  Web --> Scraper : HTML content
+  Scraper -> Storage : store_content(url_id, content)
+  Storage -> DB : UPDATE urls collection
+
+  Scraper -> Crawler : trigger_crawling(url_id)
+  Crawler -> Storage : get_url_content(url_id)
+  Storage -> DB : SELECT from urls
+  Storage --> Crawler : content + metadata
+
+  loop Multi-depth crawling (depth 1-2)
+    Crawler -> Web : discover_links(content)
+    Web --> Crawler : new URLs
+    Crawler -> Storage : store_discovered_urls(new_urls)
+    Storage -> DB : INSERT urls collection
+    Crawler -> Web : fetch_new_content(new_url)
+    Web --> Crawler : content
+    Crawler -> Storage : update_url_content(new_url_id)
+    Storage -> DB : UPDATE urls collection
+  end
+
+  Crawler -> Storage : update_url_status("completed")
+  Storage -> DB : UPDATE urls collection
+end
+
+Storage -> Storage : check_query_completion(query_id)
+Storage -> Storage : update_query_status("completed")
+Storage -> DB : UPDATE queries collection
+
+== Status Check Phase ==
+User -> CLI : status "query_id"
+CLI -> Storage : get_query_status(query_id)
+Storage -> DB : SELECT from queries
+Storage --> CLI : status + progress
+CLI --> User : Processing status + results
+
+== List Queries Phase ==
+User -> CLI : list
+CLI -> Storage : get_recent_queries()
+Storage -> DB : SELECT from queries
+Storage --> CLI : query list
+CLI --> User : Recent queries + status
+
+@enduml

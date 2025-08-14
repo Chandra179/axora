@@ -4,6 +4,7 @@
 Axora is a comprehensive data intelligence platform that performs web searches, scrapes content, crawls websites, and analyzes sentiment from collected data. It uses MongoDB for data persistence and provides an interactive CLI interface for easy operation.
 
 ## Architecture Overview
+![Axora Architecture](/diagram/axora-arch.png)
 
 Axora follows a modular architecture with six core modules:
 
@@ -11,7 +12,6 @@ Axora follows a modular architecture with six core modules:
 2. **Search Module** - Web search functionality using DuckDuckGo Lite
 3. **Scraper Module** - Content extraction from discovered URLs
 4. **Crawler Module** - Deep web crawling with multi-level traversal
-5. **Sentiment Module** - Text sentiment analysis using VADER
 6. **Storage Module** - MongoDB-based data persistence layer
 
 ## Modules Documentation
@@ -109,29 +109,6 @@ The crawler module performs deep web crawling with multi-level traversal. It sta
 - URL validation and filtering
 - Domain-specific page limits
 
-### 5. Sentiment Module (`sentiment/`)
-
-**Files:** `sentiment.py`, `vader.py`
-
-The sentiment module provides text sentiment analysis capabilities using the VADER (Valence Aware Dictionary and sEntiment Reasoner) algorithm. It analyzes scraped content and provides sentiment scores and classifications.
-
-**Key Features:**
-- VADER sentiment analysis implementation
-- Multi-field sentiment analysis (title, description, content)
-- Combined sentiment scoring
-- Database integration for result storage
-- Modular design for multiple sentiment models
-
-**Main Classes:**
-- `SentimentAnalyzer`: Main sentiment analysis controller
-- `VaderSentimentAnalyzer`: VADER-specific implementation
-
-**Analysis Output:**
-- Compound score (-1 to 1)
-- Individual scores (positive, negative, neutral ratios)
-- Sentiment classification (positive/negative/neutral)
-- Field-specific analysis (title, description, content)
-
 ### 6. Storage Module (`storage/`)
 
 **Files:** `database.py`, `queries_collection.py`, `urls_collection.py`
@@ -165,39 +142,8 @@ The storage module provides MongoDB-based data persistence for all system data. 
 4. Background Processing:
    a. Scraper Module → Content Extraction
    b. Crawler Module → Link Discovery
-   c. Sentiment Module → Text Analysis
 5. Results Storage → MongoDB
-6. CLI → Status Reporting → User
 ```
-
-## Technical Stack
-
-- **Language**: Python 3.11+
-- **Database**: MongoDB 8.0
-- **Web Requests**: requests library
-- **HTML Parsing**: BeautifulSoup4
-- **Sentiment Analysis**: VADER Sentiment
-- **Containerization**: Docker & Docker Compose
-- **Database UI**: Mongo Express
-
-## Dependencies
-
-```
-pymongo==4.6.1          # MongoDB Python driver
-flask==3.0.0             # Web framework (for future API)
-requests==2.31.0         # HTTP requests
-beautifulsoup4==4.12.2   # HTML parsing
-vaderSentiment==3.3.2    # Sentiment analysis
-```
-
-## Deployment
-
-The application supports containerized deployment using Docker:
-
-- **Application Container**: Python 3.11 slim base image
-- **Database**: MongoDB 8.0 with persistent volumes
-- **Management**: Mongo Express for database administration
-- **Networking**: Bridge network for service communication
 
 ## Project Structure
 
@@ -211,9 +157,6 @@ axora/
 │   └── scraping.py               # Web scraping from search results
 ├── crawler/
 │   └── crawler.py                # Deep web crawling with multi-level depth
-├── sentiment/
-│   ├── sentiment.py              # Sentiment analysis controller
-│   └── vader.py                  # VADER sentiment analyzer
 ├── storage/
 │   ├── __init__.py
 │   ├── database.py               # MongoDB connection and operations

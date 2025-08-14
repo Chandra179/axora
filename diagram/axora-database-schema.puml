@@ -1,0 +1,95 @@
+@startuml Axora Database Schema
+
+!theme plain
+allowmixing
+
+!define MONGODB_COLOR #47A248
+!define COLLECTION_COLOR #E3F2FD
+!define DOCUMENT_COLOR #BBDEFB
+
+package "MongoDB Database" MONGODB_COLOR {
+    
+    package "queries Collection" COLLECTION_COLOR {
+        class "Query Document" DOCUMENT_COLOR {
+            + _id: ObjectId
+            + query_id: String (unique)
+            + query_text: String
+            + status: String
+            + created_at: DateTime
+            + updated_at: DateTime
+            + max_urls: Integer
+            + total_urls_found: Integer
+            + urls_processed: Integer
+            + metadata: Object
+        }
+        
+        note right of "Query Document"
+            Status values:
+            - "pending"
+            - "processing" 
+            - "completed"
+            - "failed"
+        end note
+    }
+    
+    package "urls Collection" COLLECTION_COLOR {
+        class "URL Document" DOCUMENT_COLOR {
+            + _id: ObjectId
+            + url_id: String (unique)
+            + query_id: String (FK)
+            + url: String
+            + title: String
+            + description: String
+            + content: Text
+            + status: String
+            + depth_level: Integer
+            + parent_url_id: String
+            + discovered_at: DateTime
+            + processed_at: DateTime
+            + content_type: String
+            + response_code: Integer
+            + error_message: String
+        }
+        
+        note right of "URL Document"
+            Status values:
+            - "pending"
+            - "processing"
+            - "scraped"
+            - "crawled" 
+            - "completed"
+            - "failed"
+            
+            Depth levels:
+            - 0: Original search results
+            - 1: First level crawl
+            - 2: Second level crawl
+        end note
+    }
+    
+}
+
+' Relationships
+"Query Document" ||--o{ "URL Document" : query_id
+"URL Document" ||--o{ "URL Document" : parent_url_id\n(self-reference)
+
+' Indexes
+note bottom of "queries Collection"
+    Indexes:
+    - query_id (unique)
+    - status
+    - created_at
+end note
+
+note bottom of "urls Collection"
+    Indexes:
+    - url_id (unique)
+    - query_id
+    - url
+    - status
+    - depth_level
+    - parent_url_id
+end note
+
+
+@enduml

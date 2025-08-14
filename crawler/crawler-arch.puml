@@ -1,0 +1,88 @@
+@startuml crawler-arch
+!theme plain
+title Axora Web Crawler - High Level Architecture
+
+' Core Engine
+rectangle "WebCrawler Engine" as engine {
+    [WebCrawler] as crawler
+    [CrawlerConfig] as config
+}
+
+' Data Processing
+rectangle "Data Processing" as processing {
+    [URL Validation] as validation
+    [Content Extraction] as extraction
+    [Link Discovery] as discovery
+}
+
+' Storage & Persistence
+rectangle "Storage Layer" as storage {
+    [DatabaseManager] as db
+    [URLsCollection] as urls_db
+    [MongoDB] as mongo
+}
+
+' External Services
+rectangle "External Services" as external {
+    [HTTP Client] as http
+    [HTML Parser] as parser
+    [Robots.txt] as robots
+}
+
+' Performance Components  
+rectangle "Performance" as perf {
+    [BloomFilter\nDeduplication] as bloom
+    [ThreadPool\nParallel Processing] as threads
+    [Batch Processing] as batch
+}
+
+' Data Models
+rectangle "Data Models" as models {
+    [CrawlResult] as result
+    [LinkInfo] as link
+}
+
+' Main Flow
+crawler --> config : configured by
+crawler --> validation : validates URLs
+validation --> extraction : processes valid URLs
+extraction --> discovery : extracts content & links
+discovery --> result : produces
+
+' Storage Flow
+crawler --> urls_db : queries pending URLs
+result --> urls_db : stores crawl results
+urls_db --> db : uses
+db --> mongo : connects to
+
+' External Dependencies
+crawler --> http : makes requests
+extraction --> parser : parses HTML
+crawler --> robots : checks permissions
+
+' Performance Features
+crawler --> bloom : fast deduplication
+crawler --> threads : parallel execution
+validation --> batch : batch DB queries
+
+' Data Relationships
+result --> link : contains discovered links
+
+' Key Features Notes
+note right of bloom
+  O(1) URL deduplication
+  Prevents revisiting pages
+end note
+
+note right of threads
+  Configurable worker pool
+  Parallel URL processing
+end note
+
+note bottom of storage
+  MongoDB persistence with
+  status tracking and 
+  efficient batch operations
+end note
+
+@enduml

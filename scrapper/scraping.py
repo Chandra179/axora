@@ -75,11 +75,10 @@ class WebScraper:
             meta_desc = soup.find('meta', attrs={'name': 'description'})
             description = meta_desc.get('content', '').strip() if meta_desc else ""
             
-            # Extract main text content
+            # Extract main text content (optimized)
             text_content = soup.get_text()
-            lines = (line.strip() for line in text_content.splitlines())
-            chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-            text = ' '.join(chunk for chunk in chunks if chunk)
+            # Simple whitespace normalization - much faster than nested comprehensions
+            text = ' '.join(text_content.split())
             
             # Extract links
             links = []
@@ -121,39 +120,69 @@ class WebScraper:
         Returns:
             List of scraped data dictionaries with URL document IDs
         """
-        pending_urls = self.get_pending_urls_from_db(query_id, max_urls)
+        # Use generator for memory efficiency
+        return list(self.scrape_urls_stream(query_id, max_urls))
+    
+    def scrape_urls_stream(self, query_id: str = None, max_urls: int = 10):
+        """
+        Stream scrape pending URLs from database (generator for memory efficiency).
         
-        scraped_data = []
-        for i, url_doc in enumerate(pending_urls):
-            print(f"Scraping {i+1}/{len(pending_urls)}: {url_doc['url']}")
+        Args:
+            query_id: Optional query ID filter
+            max_urls: Maximum number of URLs to scrape
             
-            scraped = self.scrape_url(url_doc['url'])
-            scraped.update({
-                'url_id': url_doc['_id'],
-                'query_id': url_doc['query_id'],
-                'original_title': url_doc['title'],
-                'original_snippet': url_doc['snippet']
-            })
-            
-            # Update the URL document in the database
-            if scraped['status'] == 'success':
-                self.urls_collection.update_url_content(
-                    url_doc['_id'], 
-                    scraped['content'], 
-                    'processed'
-                )
-            else:
-                self.urls_collection.mark_url_failed(
-                    url_doc['_id'], 
-                    scraped.get('error', 'Unknown error')
-                )
-            
-            scraped_data.append(scraped)
-            
-            # Be respectful with delays
-            time.sleep(1)
+        Yields:
+            Scraped data dictionaries one at a time
+        """
+        # Process URLs in batches to manage memory usage
+        batch_size = min(50, max_urls)
+        processed_count = 0
         
-        return scraped_data
+        while processed_count < max_urls:
+            # Get next batch of pending URLs
+            batch_limit = min(batch_size, max_urls - processed_count)
+            pending_urls = self.get_pending_urls_from_db(query_id, batch_limit)
+            
+            if not pending_urls:
+                break
+            
+            for i, url_doc in enumerate(pending_urls):
+                if processed_count >= max_urls:
+                    break
+                    
+                print(f"Scraping {processed_count + 1}/{max_urls}: {url_doc['url']}")
+                
+                scraped = self.scrape_url(url_doc['url'])
+                scraped.update({
+                    'url_id': url_doc['_id'],
+                    'query_id': url_doc['query_id'],
+                    'original_title': url_doc['title'],
+                    'original_snippet': url_doc['snippet']
+                })
+                
+                # Update the URL document in the database
+                if scraped['status'] == 'success':
+                    self.urls_collection.update_url_content(
+                        url_doc['_id'], 
+                        scraped['content'], 
+                        'processed'
+                    )
+                else:
+                    self.urls_collection.mark_url_failed(
+                        url_doc['_id'], 
+                        scraped.get('error', 'Unknown error')
+                    )
+                
+                processed_count += 1
+                
+                # Be respectful with delays
+                time.sleep(1)
+                
+                yield scraped
+            
+            # Break if we got fewer URLs than requested (no more pending)
+            if len(pending_urls) < batch_limit:
+                break
     
     def get_scraped_urls_by_query(self, query_id: str, status: str = "processed") -> List[Dict]:
         """
@@ -185,14 +214,20 @@ def main():
         print(f"Found {len(pending_urls)} pending URLs")
         
         if pending_urls:
-            # Scrape the pending URLs
-            print("\nStarting web scraping...")
-            scraped_data = scraper.scrape_pending_urls(max_urls=50)
+            # Scrape the pending URLs using streaming for memory efficiency
+            print("\nStarting web scraping with streaming...")
+            scraped_count = 0
+            successful_scrapes = 0
             
-            if scraped_data:
-                # Print summary
-                successful_scrapes = sum(1 for item in scraped_data if item['status'] == 'success')
-                print(f"\nSuccessfully scraped {successful_scrapes}/{len(scraped_data)} URLs")
+            # Process URLs using generator for memory efficiency
+            for scraped in scraper.scrape_urls_stream(max_urls=50):
+                scraped_count += 1
+                if scraped['status'] == 'success':
+                    successful_scrapes += 1
+                # Process results one at a time without keeping all in memory
+            
+            if scraped_count > 0:
+                print(f"\nSuccessfully scraped {successful_scrapes}/{scraped_count} URLs")
                 print("URLs have been updated in the database")
             else:
                 print("No data was scraped")

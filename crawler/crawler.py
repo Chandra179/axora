@@ -15,10 +15,10 @@ from urllib.parse import urljoin, urlparse, urlunparse
 from urllib.robotparser import RobotFileParser
 from storage.database import DatabaseManager
 from storage.urls_collection import URLsCollection
-import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from requests.exceptions import RequestException, Timeout, ConnectionError, HTTPError
+from pybloom_live import BloomFilter
 
 
 @dataclass
@@ -35,6 +35,11 @@ class CrawlerConfig:
     max_context_length: int = 200
     depth_delay: float = 2.0
     user_agent: str = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    
+    # Bloom filter settings
+    bloom_capacity: int = 100000
+    bloom_error_rate: float = 0.01
+    batch_size: int = 50
     
     # URL filtering settings
     skip_extensions: Set[str] = field(default_factory=lambda: {
@@ -143,9 +148,16 @@ class WebCrawler:
         })
         
         # Crawling state
-        self.visited_urls: Set[str] = set()
         self.robots_cache: Dict[str, Optional[RobotFileParser]] = {}
-        self.lock = threading.Lock()
+        
+        # Bloom filter for fast URL deduplication
+        self.url_bloom_filter = BloomFilter(
+            capacity=self.config.bloom_capacity,
+            error_rate=self.config.bloom_error_rate
+        )
+        
+        # In-memory URL cache for current crawl session
+        self.seen_urls: Set[str] = set()
     
     def _normalize_url(self, url: str) -> str:
         """Normalize URL by removing fragments and query parameters."""
@@ -222,11 +234,10 @@ class WebCrawler:
         meta_keywords = soup.find('meta', attrs={'name': 'keywords'})
         keywords = meta_keywords.get('content', '').strip() if meta_keywords else ""
         
-        # Extract main text content
+        # Extract main text content (optimized)
         text_content = soup.get_text()
-        lines = (line.strip() for line in text_content.splitlines())
-        chunks = (phrase.strip() for line in lines for phrase in line.split("  "))
-        text = ' '.join(chunk for chunk in chunks if chunk)
+        # Simple whitespace normalization - much faster than nested comprehensions
+        text = ' '.join(text_content.split())
         
         return title_text, description, keywords, text[:self.config.max_content_length]
     
@@ -280,6 +291,121 @@ class WebCrawler:
             reason=reason
         )
     
+    def _batch_validate_urls(self, urls: List[str]) -> Dict[str, bool]:
+        """
+        Validate multiple URLs against database in batch for efficiency.
+        
+        Args:
+            urls: List of normalized URLs to validate
+            
+        Returns:
+            Dictionary mapping URL to validation status (True = should crawl)
+        """
+        if not urls:
+            return {}
+        
+        # Check database for existing URLs in batch
+        existing_status = self.urls_collection.batch_check_urls_exist(urls)
+        
+        # Return inverted status (True = should crawl = not existing)
+        return {url: not exists for url, exists in existing_status.items()}
+
+    def _crawl_level_batch(self, url_level: List[tuple]) -> tuple[List[CrawlResult], List[tuple]]:
+        """
+        Crawl a batch of URLs at the same depth level with optimized batch processing.
+        
+        Args:
+            url_level: List of (url_info, depth) tuples for current level
+            
+        Returns:
+            Tuple of (crawled_results, next_level_urls)
+        """
+        level_results = []
+        next_level = []
+        
+        # Pre-filter URLs using batch database validation
+        urls_to_validate = []
+        url_mapping = {}  # Map normalized URL back to original info
+        
+        for url_info, depth in url_level:
+            normalized_url = self._normalize_url(url_info['url'])
+            if self._is_valid_url(normalized_url) and self._should_crawl_url(normalized_url):
+                urls_to_validate.append(normalized_url)
+                url_mapping[normalized_url] = (url_info, depth)
+        
+        # Batch validate against database if we have URLs that passed bloom filter
+        if urls_to_validate:
+            validation_results = self._batch_validate_urls(urls_to_validate)
+            valid_urls = [(url_mapping[url], url) for url, should_crawl in validation_results.items() if should_crawl]
+        else:
+            valid_urls = []
+        
+        with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
+            # Submit only pre-validated URLs for parallel processing
+            future_to_url = {}
+            for (url_info, depth), normalized_url in valid_urls:
+                url = url_info['url']
+                search_query = url_info.get('search_query', '')
+                future = executor.submit(self.crawl_url, url, depth, search_query)
+                future_to_url[future] = (url_info, depth)
+            
+            # Collect results and prepare next level
+            for future in as_completed(future_to_url):
+                url_info, depth = future_to_url[future]
+                try:
+                    result = future.result()
+                    level_results.append(result)
+                    
+                    # Collect next level URLs if successful
+                    if result.status == 'success' and result.internal_links:
+                        # Limit internal links to prevent explosive growth
+                        limited_links = result.internal_links[:self.config.max_links_per_page]
+                        
+                        for link in limited_links:
+                            next_level.append(({
+                                'url': link.url,
+                                'search_query': result.search_query
+                            }, depth + 1))
+                        
+                        # Store internal links in database for future reference
+                        link_dicts = [{'url': link.url, 'text': link.text, 'context': link.context} 
+                                    for link in limited_links]
+                        self.urls_collection.add_urls_from_crawl(
+                            result.search_query, 
+                            link_dicts, 
+                            depth + 1
+                        )
+                    
+                    print(f"Crawled: {result.url} (Status: {result.status})")
+                    
+                except Exception as e:
+                    print(f"Error crawling {url_info['url']}: {e}")
+        
+        return level_results, next_level
+    
+    def _should_crawl_url(self, normalized_url: str) -> bool:
+        """
+        Fast URL deduplication using bloom filter + database batch check.
+        
+        Args:
+            normalized_url: The normalized URL to check
+            
+        Returns:
+            True if URL should be crawled, False if already seen/exists
+        """
+        # Fast O(1) in-memory check
+        if normalized_url in self.seen_urls:
+            return False
+            
+        # Fast O(1) probabilistic check with bloom filter
+        if normalized_url in self.url_bloom_filter:
+            return False  # Probably already crawled
+        
+        # Add to bloom filter and in-memory cache
+        self.url_bloom_filter.add(normalized_url)
+        self.seen_urls.add(normalized_url)
+        return True
+
     def crawl_url(self, url: str, depth: int = 0, search_query: str = "") -> CrawlResult:
         """
         Crawl content from a single URL.
@@ -299,12 +425,10 @@ class WebCrawler:
             return self._create_error_result(url, normalized_url, 'skipped', 
                                            depth, search_query, reason='Invalid URL')
         
-        # Check if already visited
-        with self.lock:
-            if normalized_url in self.visited_urls:
-                return self._create_error_result(url, normalized_url, 'skipped',
-                                               depth, search_query, reason='Already visited')
-            self.visited_urls.add(normalized_url)
+        # Fast deduplication check using bloom filter
+        if not self._should_crawl_url(normalized_url):
+            return self._create_error_result(url, normalized_url, 'skipped',
+                                           depth, search_query, reason='Already processed')
         
         # Check robots.txt
         if not self._check_robots_txt(normalized_url):
@@ -355,28 +479,23 @@ class WebCrawler:
             return self._create_error_result(url, normalized_url, 'error',
                                            depth, search_query, error=f"Unexpected error: {str(e)}")
     
-    def crawl_from_search_results(self, query: str = None, max_urls: int = 10, 
-                                max_pages_per_domain: int = 5) -> List[CrawlResult]:
+    def crawl_from_search_results_stream(self, max_urls: int = 10, max_pages_per_domain: int = 5):
         """
-        Perform deep crawling from stored search results.
+        Stream crawling results for memory efficiency (generator version).
         
         Args:
             query: Optional query filter for search results
             max_urls: Maximum seed URLs to start crawling from
             max_pages_per_domain: Maximum pages to crawl per domain
             
-        Returns:
-            List of CrawlResult objects
+        Yields:
+            CrawlResult objects one at a time as they are processed
         """
-        print(f"Starting crawl with max_depth={self.config.max_depth}, max_workers={self.config.max_workers}")
+        print(f"Starting streaming crawl with max_depth={self.config.max_depth}, max_workers={self.config.max_workers}")
         
-        # Get search results from database
-        if query:
-            search_results = self.urls_collection.get_urls_by_query(query)
-        else:
-            search_results = self.urls_collection.get_pending_urls()
+        search_results = self.urls_collection.get_pending_urls()
         
-        # Extract seed URLs from the URL collection structure
+        # Extract seed URLs using generator approach
         seed_urls = []
         domain_counts = {}
         
@@ -398,136 +517,99 @@ class WebCrawler:
         
         print(f"Found {len(seed_urls)} seed URLs from {len(domain_counts)} domains")
         
-        # Perform crawling
-        all_crawled_data = []
-        urls_to_crawl = [(info, 0) for info in seed_urls]  # (url_info, depth)
+        # Stream crawling results level by level
+        current_level = [(info, 0) for info in seed_urls]
+        total_processed = 0
         
         for current_depth in range(self.config.max_depth + 1):
-            print(f"Crawling depth {current_depth}...")
-            
-            # Filter URLs for current depth
-            current_urls = [(info, depth) for info, depth in urls_to_crawl if depth == current_depth]
-            
-            if not current_urls:
+            if not current_level:
                 break
+                
+            print(f"Streaming depth {current_depth} with {len(current_level)} URLs...")
             
-                # Crawl URLs concurrently
-            crawled_batch = []
+            # Process and yield results from current level
+            next_level = []
             
             with ThreadPoolExecutor(max_workers=self.config.max_workers) as executor:
-                future_to_url = {}
-                
-                for url_info, depth in current_urls:
-                    url = url_info['url']
-                    search_query = url_info.get('search_query', '')
-                    future = executor.submit(self.crawl_url, url, depth, search_query)
-                    future_to_url[future] = (url_info, depth)
+                future_to_url = {
+                    executor.submit(self.crawl_url, url_info['url'], depth, url_info.get('search_query', '')): (url_info, depth)
+                    for url_info, depth in current_level
+                }
                 
                 for future in as_completed(future_to_url):
                     url_info, depth = future_to_url[future]
                     try:
                         result = future.result()
-                        crawled_batch.append(result)
+                        total_processed += 1
                         
-                        # If successful and not at max depth, add internal links for next depth
+                        # Collect next level URLs if successful and not at max depth
                         if (result.status == 'success' and 
                             current_depth < self.config.max_depth and 
                             result.internal_links):
                             
-                            for link in result.internal_links[:self.config.max_links_per_page]:
-                                urls_to_crawl.append(({
+                            limited_links = result.internal_links[:self.config.max_links_per_page]
+                            for link in limited_links:
+                                next_level.append(({
                                     'url': link.url,
                                     'search_query': result.search_query
                                 }, depth + 1))
-                        
-                        # Store internal links for future crawling
-                        if result.internal_links:
+                            
+                            # Store internal links in database
                             link_dicts = [{'url': link.url, 'text': link.text, 'context': link.context} 
-                                        for link in result.internal_links]
+                                        for link in limited_links]
                             self.urls_collection.add_urls_from_crawl(
                                 result.search_query, 
                                 link_dicts, 
                                 depth + 1
                             )
                         
-                        print(f"Crawled: {result.url} (Status: {result.status})")
+                        print(f"Crawled [{total_processed}]: {result.url} (Status: {result.status})")
+                        yield result
                         
                     except Exception as e:
                         print(f"Error crawling {url_info['url']}: {e}")
             
-            all_crawled_data.extend(crawled_batch)
+            # Prepare for next depth
+            current_level = next_level if current_depth < self.config.max_depth else []
             
             # Add delay between depth levels
-            if current_depth < self.config.max_depth:
+            if current_level and current_depth < self.config.max_depth:
                 time.sleep(self.config.depth_delay)
         
-        print(f"Crawling completed. Total URLs processed: {len(all_crawled_data)}")
-        return all_crawled_data
-    
-    def get_crawling_stats(self, crawled_data: List[CrawlResult]) -> Dict:
-        """
-        Generate crawling statistics.
-        
-        Args:
-            crawled_data: List of CrawlResult objects
-            
-        Returns:
-            Statistics dictionary
-        """
-        if not crawled_data:
-            return {}
-        
-        stats = {
-            'total_urls': len(crawled_data),
-            'successful_crawls': sum(1 for item in crawled_data if item.status == 'success'),
-            'failed_crawls': sum(1 for item in crawled_data if item.status == 'error'),
-            'skipped_crawls': sum(1 for item in crawled_data if item.status in ['skipped', 'blocked']),
-            'domains': len(set(urlparse(item.url).netloc for item in crawled_data)),
-            'avg_content_length': 0,
-            'avg_response_time': 0,
-            'depth_distribution': {}
-        }
-        
-        successful_crawls = [item for item in crawled_data if item.status == 'success']
-        if successful_crawls:
-            stats['avg_content_length'] = sum(item.content_length for item in successful_crawls) / len(successful_crawls)
-            stats['avg_response_time'] = sum(item.response_time for item in successful_crawls) / len(successful_crawls)
-        
-        # Depth distribution
-        for item in crawled_data:
-            stats['depth_distribution'][item.depth] = stats['depth_distribution'].get(item.depth, 0) + 1
-        
-        return stats
-    
-    def close(self):
-        """Close database connections and session."""
-        self.db_manager.close()
-        self.session.close()
+        print(f"Streaming crawl completed. Total URLs processed: {total_processed}")
 
 
 def main():
     """Example usage of the web crawler."""
-    config = CrawlerConfig(max_depth=2, max_workers=3)
+    config = CrawlerConfig(max_depth=3, max_workers=3)
     crawler = WebCrawler(config=config)
     
     try:
         print("Starting web crawling from search results...")
         
-        # Perform crawling
-        crawled_data = crawler.crawl_from_search_results(max_urls=50, max_pages_per_domain=3)
+        # Perform streaming crawling for memory efficiency
+        print("Using streaming crawl for memory efficiency...")
+        crawled_count = 0
+        successful_count = 0
+        failed_count = 0
+        skipped_count = 0
         
-        if crawled_data:            
-            # Print statistics
-            stats = crawler.get_crawling_stats(crawled_data)
-            print("\nCrawling Statistics:")
-            print(f"- Total URLs processed: {stats.get('total_urls', 0)}")
-            print(f"- Successful crawls: {stats.get('successful_crawls', 0)}")
-            print(f"- Failed crawls: {stats.get('failed_crawls', 0)}")
-            print(f"- Skipped crawls: {stats.get('skipped_crawls', 0)}")
-            print(f"- Domains crawled: {stats.get('domains', 0)}")
-            print(f"- Average content length: {stats.get('avg_content_length', 0):.0f} bytes")
-            print(f"- Average response time: {stats.get('avg_response_time', 0):.2f} seconds")
-            print(f"- Depth distribution: {stats.get('depth_distribution', {})}")
+        # Process results as they come in without storing all in memory
+        for result in crawler.crawl_from_search_results_stream(max_urls=50, max_pages_per_domain=3):
+            crawled_count += 1
+            if result.status == 'success':
+                successful_count += 1
+            elif result.status == 'error':
+                failed_count += 1
+            else:
+                skipped_count += 1
+        
+        if crawled_count > 0:
+            print("\nStreaming Crawl Statistics:")
+            print(f"- Total URLs processed: {crawled_count}")
+            print(f"- Successful crawls: {successful_count}")
+            print(f"- Failed crawls: {failed_count}")
+            print(f"- Skipped crawls: {skipped_count}")
         else:
             print("No data was crawled")
             

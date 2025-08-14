@@ -1,0 +1,72 @@
+@startuml Axora System Architecture
+
+!theme plain
+
+package "Axora Platform" {
+    
+    package "User Interface Layer" {
+        component "CLI Module" as CLI
+        note right of CLI : Interactive command-line\ninterface for user queries
+    }
+    
+    package "Core Processing Modules" {
+        component "Search Module" as Search
+        component "Scraper Module" as Scraper  
+        component "Crawler Module" as Crawler
+        
+        note right of Search : DuckDuckGo API integration\nwith pagination support
+        note right of Scraper : Content extraction\nfrom discovered URLs
+        note right of Crawler : Multi-depth crawling\nwith robots.txt compliance
+    }
+    
+    package "Data Layer" {
+        component "Storage Module" as Storage
+        database "MongoDB" as DB {
+            component "queries collection"
+            component "urls collection"
+        }
+        
+        note right of Storage : Database abstraction layer\nwith connection management
+    }
+    
+    package "External Services" {
+        cloud "DuckDuckGo API" as DDG
+        cloud "Web Content" as Web
+    }
+}
+
+package "Infrastructure" {
+    component "Docker Environment" as Docker
+    component "Mongo Express UI" as MongoUI
+    
+    note right of Docker : Containerized deployment\nwith docker-compose
+    note right of MongoUI : Web UI for database\nmanagement (port 8081)
+}
+
+' User interactions
+CLI --> Search : search commands
+CLI --> Storage : status queries
+CLI --> CLI : configuration commands
+
+' Processing pipeline
+Search --> DDG : API requests
+Search --> Storage : store URLs
+Storage --> DB
+
+Scraper --> Web : fetch content
+Scraper --> Storage : update URL status
+
+Crawler --> Web : discover new URLs
+Crawler --> Storage : store crawled URLs
+
+
+' Infrastructure connections
+Docker ..> CLI : contains
+Docker ..> DB : manages
+MongoUI --> DB : queries
+
+' Data flow arrows
+Search ..> Scraper : triggers
+Scraper ..> Crawler : triggers
+
+@enduml
