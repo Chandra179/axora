@@ -133,18 +133,6 @@ The storage module provides MongoDB-based data persistence for all system data. 
 - **urls**: URLs, content, and processing status
 - **sentiment_analysis**: Sentiment analysis results
 
-## Data Flow Architecture
-
-```
-1. User Query → CLI Module
-2. CLI → Search Module → DuckDuckGo API
-3. Search Results → Storage (URLs Collection)
-4. Background Processing:
-   a. Scraper Module → Content Extraction
-   b. Crawler Module → Link Discovery
-5. Results Storage → MongoDB
-```
-
 ## Project Structure
 
 ```
