@@ -1,0 +1,3 @@
+# Runtime configuration (politeness limits, allow/deny rules, 
+# timeouts, Kafka topics, Mongo connection strings, UA). 
+# The app loads this at startup — no hardcoded values.
