@@ -33,6 +33,27 @@ services:
     networks:
       - axora-network
 
+  axora-crawler:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+      cache_from:
+        - axora-crawler:latest
+    container_name: axora-crawler
+    restart: unless-stopped
+    environment:
+      MONGO_URL: ${MONGO_URL}
+      MONGO_DATABASE: ${MONGO_DATABASE}
+      DOCKER_BUILDKIT: 1
+    ports:
+      - "${APP_PORT}:8080"
+    depends_on:
+      - axora-mongodb
+    networks:
+      - axora-network
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+
 volumes:
   axora-mongodb-data:
 
