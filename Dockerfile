@@ -1,34 +1,34 @@
-# Use buildkit for faster builds
-# syntax=docker/dockerfile:1
-
-FROM python:3.11-slim
+# Build stage
+FROM golang:1.25.0-alpine AS builder
 
 WORKDIR /app
 
-# Install system dependencies in one layer
-RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/* \
-    && apt-get clean
+# Copy go mod and sum files
+COPY go.mod go.sum ./
 
-# Copy requirements first for better caching
-COPY requirements.txt .
+# Download dependencies
+RUN go mod download
 
-# Install Python dependencies with caching
-RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir -r requirements.txt
+# Copy source code
+COPY . .
 
-# Create non-root user early
-RUN useradd --create-home --shell /bin/bash axora
+# Build the application
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o main ./cmd
 
-# Copy application code (this layer changes most frequently)
-COPY --chown=axora:axora . .
+# Final stage
+FROM alpine:latest
 
-# Switch to non-root user
-USER axora
+# Install ca-certificates for HTTPS requests
+RUN apk --no-cache add ca-certificates
 
-# Expose port
+WORKDIR /root/
+
+# Copy the binary from builder stage
+COPY --from=builder /app/main .
+
+
+# Expose port (adjust as needed)
 EXPOSE 8080
 
-# Run the crawler
-CMD ["python", "main.py"]
+# Command to run the executable
+CMD ["./main"]
