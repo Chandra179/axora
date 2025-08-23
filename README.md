@@ -44,3 +44,31 @@ Depth 2:
 With DEPTH_LIMIT = 2:
 - Scrapy stops here - won't crawl those 150,000 URLs
 - Total pages crawled: 100 (depth 0) + ~5,000 (depth 1) + ~150,000 (depth 2) = ~155,100 pages
+
+### Data training
+● For data training purposes, you should store:
+
+  Essential data:
+  - URL - Source identifier
+  - Content - Main text content (cleaned HTML)
+  - Title - Page title
+  - Timestamp - When scraped
+  - StatusCode - HTTP response code
+
+  Metadata for quality/filtering:
+  - ContentType - text/html, application/pdf, etc.
+  - Language - Detected language
+  - ContentLength - Size of content
+  - Domain - For domain-based filtering
+  - Depth - Crawl depth from seed URL
+
+  Training-specific fields:
+  - ContentHash - For deduplication
+  - Quality - Content quality score (readability, length, etc.)
+  - Category - Topic classification if applicable
+  - Links - Outbound links (for graph analysis)
+
+  Optional structured data:
+  - Headers - H1, H2, etc. (semantic structure)
+  - Images - Image URLs and alt text
+  - Keywords - Extracted keywords/entities

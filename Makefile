@@ -3,3 +3,6 @@ run:
 
 ins:
 	go mod tidy && go mod vendor
+
+go:
+	docker compose up -d

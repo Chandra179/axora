@@ -1,3 +1,10 @@
+# Go build artifacts
+main
+*.exe
+
+# Don't ignore vendor directory - we need it for builds
+# vendor/
+
 # Virtual environments
 venv/
 .venv/
@@ -29,6 +36,7 @@ docs/
 
 # Logs
 *.log
+logs.txt
 
 # OS files
 .DS_Store

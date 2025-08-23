@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"axora/config"
+	"axora/crawler"
+	"axora/storage"
 
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -18,16 +20,16 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	log.Printf("Loaded configuration - MongoDB: %s:%d, App Port: %d",
-		cfg.MongoDatabase, cfg.MongoPort, cfg.AppPort)
-
 	client, err := initMongoDB(cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize MongoDB: %v", err)
 	}
-	fmt.Println(client)
 
-	log.Println("MongoDB initialized successfully")
+	db := client.Database(cfg.MongoDatabase)
+	crawlCollection := storage.NewCrawlCollection(db)
+
+	worker := crawler.NewWorker(crawlCollection)
+	worker.Crawl(context.Background(), "https://news.ycombinator.com/")
 }
 
 func initMongoDB(cfg *config.Config) (*mongo.Client, error) {
