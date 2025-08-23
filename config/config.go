@@ -18,6 +18,8 @@ type Config struct {
 	MongoExpressPort     int
 
 	AppPort int
+
+	SerpApiKey string
 }
 
 func Load() (*Config, error) {
@@ -48,6 +50,8 @@ func Load() (*Config, error) {
 		MongoExpressPort:     mongoExpressPort,
 
 		AppPort: appPort,
+
+		SerpApiKey: getEnv("SERP_API_KEY"),
 	}, nil
 }
 

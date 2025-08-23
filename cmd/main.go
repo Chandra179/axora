@@ -8,6 +8,7 @@ import (
 
 	"axora/config"
 	"axora/crawler"
+	"axora/search"
 	"axora/storage"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -28,8 +29,26 @@ func main() {
 	db := client.Database(cfg.MongoDatabase)
 	crawlCollection := storage.NewCrawlCollection(db)
 
-	worker := crawler.NewWorker(crawlCollection)
-	worker.Crawl(context.Background(), "https://news.ycombinator.com/")
+	searchEngine := search.NewSerpApiSearchEngine(cfg.SerpApiKey)
+	searchReq := &search.SearchRequest{
+		Query:    "bitcoin price prediction",
+		MaxPages: 2,
+	}
+
+	searchResults, err := searchEngine.Search(context.Background(), searchReq)
+	if err != nil {
+		log.Fatalf("Failed to search: %v", err)
+	}
+
+	urls := extractURLsFromSearchResults(searchResults)
+	log.Printf("Found %d URLs to crawl", len(urls))
+
+	// Extract keywords using RAKE from search query and results
+	keywords := crawler.ExtractKeywordsFromSearchResults(searchReq.Query, searchResults, 10)
+	log.Printf("Extracted keywords: %v", keywords)
+
+	worker := crawler.NewWorker(crawlCollection, keywords)
+	worker.Crawl(context.Background(), urls)
 }
 
 func initMongoDB(cfg *config.Config) (*mongo.Client, error) {
@@ -47,4 +66,14 @@ func initMongoDB(cfg *config.Config) (*mongo.Client, error) {
 	}
 
 	return client, nil
+}
+
+func extractURLsFromSearchResults(results []search.SearchResult) []string {
+	urls := make([]string, 0, len(results))
+	for _, result := range results {
+		if result.URL != "" {
+			urls = append(urls, result.URL)
+		}
+	}
+	return urls
 }

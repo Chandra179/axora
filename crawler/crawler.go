@@ -3,6 +3,7 @@ package crawler
 import (
 	"context"
 	"log"
+	"strings"
 	"time"
 
 	"axora/storage"
@@ -14,13 +15,14 @@ type Worker struct {
 	collector *colly.Collector
 	crawlRepo storage.CrawlRepository
 	extractor *ReadabilityExtractor
+	keywords  []string
 }
 
-func NewWorker(crawlRepo storage.CrawlRepository) *Worker {
+func NewWorker(crawlRepo storage.CrawlRepository, keywords []string) *Worker {
 	c := colly.NewCollector(
 		// colly.Debugger(&debug.LogDebugger{}),
 		colly.UserAgent("Axora-Crawler/1.0"),
-		colly.MaxDepth(2),
+		colly.MaxDepth(1),
 		// Enable async mode for better performance
 		colly.Async(true),
 	)
@@ -35,13 +37,18 @@ func NewWorker(crawlRepo storage.CrawlRepository) *Worker {
 		collector: c,
 		crawlRepo: crawlRepo,
 		extractor: NewReadabilityExtractor(),
+		keywords:  keywords,
 	}
 }
 
-func (w *Worker) Crawl(ctx context.Context, url string) {
+func (w *Worker) Crawl(ctx context.Context, urls []string) {
 	w.collector.OnHTML("a[href]", func(e *colly.HTMLElement) {
 		link := e.Attr("href")
-		w.collector.Visit(link)
+		// Only visit link if it contains relevant keywords
+		if w.isRelevant(e.Text) {
+			log.Printf("Following relevant link: %s (context: %.100s)", link, e.Text)
+			w.collector.Visit(link)
+		}
 	})
 
 	w.collector.OnScraped(func(r *colly.Response) {
@@ -70,10 +77,28 @@ func (w *Worker) Crawl(ctx context.Context, url string) {
 		log.Printf("Visited %s (Status: %d)", r.Request.URL, r.StatusCode)
 	})
 
-	err := w.collector.Visit(url)
-	if err != nil {
-		// log
+	for _, url := range urls {
+		err := w.collector.Visit(url)
+		if err != nil {
+			log.Printf("Failed to visit %s: %v", url, err)
+		}
 	}
 
 	w.collector.Wait()
+}
+
+func (w *Worker) isRelevant(context string) bool {
+	if len(w.keywords) == 0 {
+		return true // If no keywords specified, accept all links
+	}
+
+	context = strings.ToLower(context)
+
+	for _, keyword := range w.keywords {
+		if strings.Contains(context, strings.ToLower(keyword)) {
+			return true
+		}
+	}
+
+	return false
 }
