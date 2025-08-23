@@ -21,6 +21,7 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
+	// DATABASE
 	client, err := initMongoDB(cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize MongoDB: %v", err)
@@ -29,9 +30,10 @@ func main() {
 	db := client.Database(cfg.MongoDatabase)
 	crawlCollection := storage.NewCrawlCollection(db)
 
+	// SEARCH
 	searchEngine := search.NewSerpApiSearchEngine(cfg.SerpApiKey)
 	searchReq := &search.SearchRequest{
-		Query:    "bitcoin price prediction",
+		Query:    "information retrieval",
 		MaxPages: 2,
 	}
 
@@ -39,15 +41,18 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to search: %v", err)
 	}
-
 	urls := extractURLsFromSearchResults(searchResults)
-	log.Printf("Found %d URLs to crawl", len(urls))
 
-	// Extract keywords using RAKE from search query and results
-	keywords := crawler.ExtractKeywordsFromSearchResults(searchReq.Query, searchResults, 10)
-	log.Printf("Extracted keywords: %v", keywords)
+	// EXTRACTOR
+	extractor := crawler.NewContentExtractor()
 
-	worker := crawler.NewWorker(crawlCollection, keywords)
+	// Define keywords for relevance filtering - extracted from search query
+	keywords := []string{"bitcoin", "price", "prediction", "cryptocurrency", "analysis", "forecast"}
+	relevanceThreshold := 0.1 // Adjust threshold as needed (0.0 = very permissive, 1.0 = very strict)
+
+	worker := crawler.NewWorker(crawlCollection, extractor, keywords, relevanceThreshold)
+	defer worker.Close() // Ensure cleanup of relevance filter resources
+
 	worker.Crawl(context.Background(), urls)
 }
 

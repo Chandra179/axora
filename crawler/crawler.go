@@ -12,13 +12,13 @@ import (
 )
 
 type Worker struct {
-	collector *colly.Collector
-	crawlRepo storage.CrawlRepository
-	extractor *ReadabilityExtractor
-	keywords  []string
+	collector        *colly.Collector
+	crawlRepo        storage.CrawlRepository
+	extractor        *ContentExtractor
+	relevanceFilter  RelevanceFilter
 }
 
-func NewWorker(crawlRepo storage.CrawlRepository, keywords []string) *Worker {
+func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor, keywords []string, relevanceThreshold float64) *Worker {
 	c := colly.NewCollector(
 		// colly.Debugger(&debug.LogDebugger{}),
 		colly.UserAgent("Axora-Crawler/1.0"),
@@ -33,33 +33,76 @@ func NewWorker(crawlRepo storage.CrawlRepository, keywords []string) *Worker {
 		Delay:       1 * time.Second,
 	})
 
+	// Create relevance filter with provided keywords
+	relevanceFilter, err := NewBleveRelevanceScorer(keywords, relevanceThreshold)
+	if err != nil {
+		log.Printf("Failed to create relevance filter: %v", err)
+		relevanceFilter = nil
+	}
+
 	return &Worker{
-		collector: c,
-		crawlRepo: crawlRepo,
-		extractor: NewReadabilityExtractor(),
-		keywords:  keywords,
+		collector:       c,
+		crawlRepo:       crawlRepo,
+		extractor:       extractor,
+		relevanceFilter: relevanceFilter,
 	}
 }
 
 func (w *Worker) Crawl(ctx context.Context, urls []string) {
 	w.collector.OnHTML("a[href]", func(e *colly.HTMLElement) {
 		link := e.Attr("href")
-		// Only visit link if it contains relevant keywords
-		if w.isRelevant(e.Text) {
-			log.Printf("Following relevant link: %s (context: %.100s)", link, e.Text)
+		
+		// Skip if no relevance filter is available
+		if w.relevanceFilter == nil {
 			w.collector.Visit(link)
+			return
+		}
+		
+		// Extract title and description for relevance check
+		title := strings.TrimSpace(e.Text)
+		
+		// Try to get meta description from the current page context
+		metaDescription := ""
+		if metaDesc := e.DOM.Parents().Find("meta[name='description']").First(); metaDesc.Length() > 0 {
+			metaDescription, _ = metaDesc.Attr("content")
+		}
+		
+		// Check if the URL is relevant before visiting
+		isRelevant, score, err := w.relevanceFilter.IsURLRelevant(link, title, metaDescription)
+		if err != nil {
+			log.Printf("Error checking relevance for %s: %v", link, err)
+			return
+		}
+		
+		if isRelevant {
+			log.Printf("Following relevant link %s (score: %.3f)", link, score)
+			w.collector.Visit(link)
+		} else {
+			log.Printf("Skipping irrelevant link %s (score: %.3f)", link, score)
 		}
 	})
 
 	w.collector.OnScraped(func(r *colly.Response) {
 		url := r.Request.URL.String()
 
-		extractedText, err := w.extractor.ExtractText(string(r.Body), url)
-		if err != nil {
-			log.Printf("Failed to extract content from %s: %v", url, err)
-			extractedText = string(r.Body)
+		extractedText, _ := w.extractor.ExtractText(string(r.Body))
+		
+		// Double-check relevance with full content if filter is available
+		if w.relevanceFilter != nil {
+			isRelevant, score, err := w.relevanceFilter.IsURLRelevant(url, "", extractedText)
+			if err != nil {
+				log.Printf("Error checking content relevance for %s: %v", url, err)
+				return
+			}
+			
+			if !isRelevant {
+				log.Printf("Skipping irrelevant content from %s (score: %.3f)", url, score)
+				return
+			}
+			
+			log.Printf("Saving relevant content from %s (score: %.3f)", url, score)
 		}
-
+		
 		crawlData := &storage.Doc{
 			URL:        url,
 			Content:    extractedText,
@@ -67,7 +110,7 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 			CrawledAt:  time.Now(),
 		}
 
-		_, err = w.crawlRepo.InsertOne(ctx, crawlData)
+		_, err := w.crawlRepo.InsertOne(ctx, crawlData)
 		if err != nil {
 			log.Printf("Failed to save %s: %v", url, err)
 		}
@@ -87,18 +130,10 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 	w.collector.Wait()
 }
 
-func (w *Worker) isRelevant(context string) bool {
-	if len(w.keywords) == 0 {
-		return true // If no keywords specified, accept all links
+// Close cleans up resources used by the worker
+func (w *Worker) Close() error {
+	if w.relevanceFilter != nil {
+		return w.relevanceFilter.Close()
 	}
-
-	context = strings.ToLower(context)
-
-	for _, keyword := range w.keywords {
-		if strings.Contains(context, strings.ToLower(keyword)) {
-			return true
-		}
-	}
-
-	return false
+	return nil
 }
