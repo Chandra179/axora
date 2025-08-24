@@ -55,14 +55,20 @@ func main() {
 	// ==========
 	// Relevance filter
 	// ==========
-	relevanceThreshold := 0.7 // Semantic similarity threshold (0.7+ recommended for high precision)
-	modelPath := "models/all-MiniLM-L6-v2.onnx" // Path to ONNX model file
-	relevanceFilter, err := crawler.NewSemanticRelevanceScorer(searchReq.Query, relevanceThreshold, modelPath)
-	if err != nil {
-		log.Printf("Failed to create relevance filter: %v", err)
-		relevanceFilter = nil
+	modelServiceURL := cfg.ModelServiceURL
+	if modelServiceURL == "" {
+		modelServiceURL = "http://axora-model-service:80"
 	}
-
+	
+	relevanceFilter, err := crawler.NewSemanticRelevanceFilter(
+		modelServiceURL, 
+		searchReq.Query, 
+		0.7, // threshold for relevance
+	)
+	if err != nil {
+		log.Fatalf("Failed to initialize semantic relevance filter: %v", err)
+	}
+	
 	worker := crawler.NewWorker(crawlCollection, extractor, relevanceFilter)
 	defer worker.Close()
 

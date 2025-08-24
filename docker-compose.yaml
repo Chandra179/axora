@@ -1,6 +1,28 @@
 version: '3.8'
 
 services:
+  axora-model-service:
+    image: ghcr.io/huggingface/text-embeddings-inference:1.5
+    container_name: axora-model-service
+    restart: unless-stopped
+    environment:
+      - MODEL_ID=sentence-transformers/all-MiniLM-L6-v2
+      - PORT=80
+      - MAX_CONCURRENT_REQUESTS=512
+      - MAX_BATCH_TOKENS=16384
+    ports:
+      - "8000:80"
+    volumes:
+      - axora-model-cache:/data
+    networks:
+      - axora-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   axora-mongodb:
     image: mongo:latest
     container_name: axora-mongodb
@@ -47,6 +69,7 @@ services:
       cache_from:
         - axora-crawler:latest
     container_name: axora-crawler
+    restart: unless-stopped
     environment:
       MONGO_URL: ${MONGO_URL}
       MONGO_DATABASE: ${MONGO_DATABASE}
@@ -58,10 +81,13 @@ services:
       MONGO_EXPRESS_PORT: ${MONGO_EXPRESS_PORT}
       APP_PORT: ${APP_PORT}
       SERP_API_KEY: ${SERP_API_KEY}
+      MODEL_SERVICE_URL: http://axora-model-service:80
       DOCKER_BUILDKIT: 1
     ports:
       - "${APP_PORT}:8080"
     depends_on:
+      axora-model-service:
+        condition: service_healthy
       axora-mongodb:
         condition: service_healthy
     networks:
@@ -69,6 +95,7 @@ services:
 
 volumes:
   axora-mongodb-data:
+  axora-model-cache:
 
 networks:
   axora-network:

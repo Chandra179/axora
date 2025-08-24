@@ -20,6 +20,7 @@ type Config struct {
 	AppPort int
 
 	SerpApiKey string
+	ModelServiceURL string
 }
 
 func Load() (*Config, error) {
@@ -52,6 +53,7 @@ func Load() (*Config, error) {
 		AppPort: appPort,
 
 		SerpApiKey: getEnv("SERP_API_KEY"),
+		ModelServiceURL: os.Getenv("MODEL_SERVICE_URL"),
 	}, nil
 }
 

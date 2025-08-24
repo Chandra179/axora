@@ -74,7 +74,6 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 	w.collector.OnHTML("a[href]", func(e *colly.HTMLElement) {
 		link := e.Attr("href")
 		title := strings.TrimSpace(e.Text)
-		anchorText := strings.TrimSpace(e.Text) // Same as title for anchor links
 		timestamp := time.Now().Format("2006-01-02 15:04:05")
 
 		// Get meta description from the current page context
@@ -85,16 +84,8 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 			}
 		}
 
-		// Extract headings from current page context (simplified)
-		headings := ""
-		if h := e.Request.Ctx.GetAny("page_headings"); h != nil {
-			if headingsStr, ok := h.(string); ok {
-				headings = headingsStr
-			}
-		}
-
 		// Check if the URL is relevant before visiting
-		isRelevant, score, err := w.relevanceFilter.IsURLRelevant(title, metaDescription, anchorText, headings)
+		isRelevant, score, err := w.relevanceFilter.IsURLRelevant(title, metaDescription)
 		if err != nil {
 			log.Printf("[%s] Error checking relevance for URL: %s, Error: %v", timestamp, link, err)
 			return
