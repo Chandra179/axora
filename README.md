@@ -45,15 +45,46 @@ With DEPTH_LIMIT = 2:
 - Scrapy stops here - won't crawl those 150,000 URLs
 - Total pages crawled: 100 (depth 0) + ~5,000 (depth 1) + ~150,000 (depth 2) = ~155,100 pages
 
-### Link relevancy
- Most production systems add weighted features:
-  - Anchor text: 40% weight
-  - URL tokens: 30% weight
-  - Surrounding context: 20% weight
-  - Page authority: 10% weight
+### Semantic Similarity for Link Relevancy
 
-  Academic Benchmarks:
+#### HTML Data Sources for Semantic Matching
+The crawler extracts and combines the following HTML elements to form content for semantic similarity:
 
-  - Google's original PageRank paper: Used TF-IDF for relevance
-  - Focused crawling studies: TF-IDF consistently beats other methods
-  - Commercial crawlers (Scrapy, Nutch): All use TF-IDF variants
+**Primary Sources (High Priority):**
+- `<title>` tag: Page title (weight: 35%)
+- `<meta name="description">` content: Page meta description (weight: 30%)
+- Link anchor text: `<a href="">text</a>` content (weight: 25%)
+
+**Secondary Sources (Medium Priority):**
+- `<h1>`, `<h2>`, `<h3>` headings: Page structure context (weight: 10%)
+- URL path tokens: Extract meaningful words from URL structure
+- Open Graph tags: `<meta property="og:title">`, `<meta property="og:description">`
+
+**Combined Content Format:**
+```
+content = title + " " + metaDescription + " " + anchorText + " " + headings
+```
+
+#### Algorithm: Sentence-BERT (all-MiniLM-L6-v2)
+
+**Model Selection Rationale:**
+- **Best for 3-100 word queries**: Optimal for typical search queries
+- **Semantic understanding**: Matches "cryptocurrency forecast" with "bitcoin prediction"
+- **Performance**: ~50ms per link comparison (acceptable for crawling)
+- **Multilingual support**: Handles non-English content
+
+**Implementation Approach:**
+1. **Query Processing**: Convert search query to 384-dimensional embedding vector
+2. **Content Processing**: Extract HTML data → combine → generate embedding vector  
+3. **Similarity Calculation**: Cosine similarity between query and content vectors
+4. **Relevance Decision**: Threshold-based filtering (recommended: 0.7+ for high precision)
+
+**Advantages over TF-IDF:**
+- Captures semantic relationships (synonyms, related concepts)
+- Context-aware matching (handles ambiguous terms)
+- Better performance on conceptual queries ("how to build AI agents")
+
+**Technical Requirements:**
+- ONNX Runtime Go package for model inference
+- Pre-trained all-MiniLM-L6-v2 model (~90MB)
+- Minimum 2GB RAM for efficient processing
