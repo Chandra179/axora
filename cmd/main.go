@@ -21,7 +21,9 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
+	// ==========
 	// DATABASE
+	// ==========
 	client, err := initMongoDB(cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize MongoDB: %v", err)
@@ -30,10 +32,12 @@ func main() {
 	db := client.Database(cfg.MongoDatabase)
 	crawlCollection := storage.NewCrawlCollection(db)
 
+	// ==========
 	// SEARCH
+	// ==========
 	searchEngine := search.NewSerpApiSearchEngine(cfg.SerpApiKey)
 	searchReq := &search.SearchRequest{
-		Query:    "information retrieval",
+		Query:    "information retrieval for llm",
 		MaxPages: 2,
 	}
 
@@ -43,15 +47,40 @@ func main() {
 	}
 	urls := extractURLsFromSearchResults(searchResults)
 
+	// ==========
 	// EXTRACTOR
+	// ==========
 	extractor := crawler.NewContentExtractor()
 
-	// Define keywords for relevance filtering - extracted from search query
-	keywords := []string{"bitcoin", "price", "prediction", "cryptocurrency", "analysis", "forecast"}
-	relevanceThreshold := 0.1 // Adjust threshold as needed (0.0 = very permissive, 1.0 = very strict)
+	// ==========
+	// Keyword extraction
+	// ==========
+	keywordExtractor := search.NewSimpleKeywordExtractor() // Extract up to 10 keywords
+	if err != nil {
+		log.Printf("Failed to create keyword extractor: %v", err)
+	}
 
-	worker := crawler.NewWorker(crawlCollection, extractor, keywords, relevanceThreshold)
-	defer worker.Close() // Ensure cleanup of relevance filter resources
+	var keywords []string
+	keywords, err = keywordExtractor.ExtractKeywords(searchReq.Query)
+	if err != nil {
+		log.Printf("Failed to extract keywords: %v", err)
+		keywords = []string{searchReq.Query} // Fallback to using the query itself
+	}
+
+	log.Printf("Extracted keywords from '%s': %v", searchReq.Query, keywords)
+
+	// ==========
+	// Relevance filter
+	// ==========
+	relevanceThreshold := 0.1 // Adjust threshold as needed (0.0 = very permissive, 1.0 = very strict)
+	relevanceFilter, err := crawler.NewBleveRelevanceScorer(keywords, relevanceThreshold)
+	if err != nil {
+		log.Printf("Failed to create relevance filter: %v", err)
+		relevanceFilter = nil
+	}
+
+	worker := crawler.NewWorker(crawlCollection, extractor, relevanceFilter)
+	defer worker.Close()
 
 	worker.Crawl(context.Background(), urls)
 }

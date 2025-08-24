@@ -3,7 +3,6 @@ package crawler
 import (
 	"fmt"
 	"log"
-	"net/url"
 	"strings"
 
 	"github.com/blevesearch/bleve/v2"
@@ -20,7 +19,7 @@ type LinkInfo struct {
 
 // RelevanceFilter defines the interface for URL relevance filtering
 type RelevanceFilter interface {
-	IsURLRelevant(targetURL string, title, metaDescription string) (bool, float64, error)
+	IsURLRelevant(title, metaDescription string) (bool, float64, error)
 	GetRelevantLinks(links []LinkInfo) []LinkInfo
 	UpdateKeywords(keywords []string) error
 	Close() error
@@ -78,60 +77,14 @@ func (brs *BleveRelevanceScorer) indexKeywords() error {
 }
 
 // IsURLRelevant checks if a URL is relevant based on URL path and meta content
-func (brs *BleveRelevanceScorer) IsURLRelevant(targetURL string, title, metaDescription string) (bool, float64, error) {
-	content := brs.extractURLContent(targetURL)
-	if title != "" {
-		content += " " + title
-	}
-	if metaDescription != "" {
-		content += " " + metaDescription
-	}
-
+func (brs *BleveRelevanceScorer) IsURLRelevant(title, metaDescription string) (bool, float64, error) {
+	content := title + metaDescription
 	score, err := brs.calculateRelevanceScore(content)
 	if err != nil {
 		return false, 0, err
 	}
 
 	return score >= brs.threshold, score, nil
-}
-
-func (brs *BleveRelevanceScorer) extractURLContent(rawURL string) string {
-	parsedURL, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL
-	}
-
-	content := []string{}
-
-	if parsedURL.Host != "" {
-		domain := strings.TrimPrefix(parsedURL.Host, "www.")
-		domain = strings.TrimSuffix(domain, ".com")
-		domain = strings.TrimSuffix(domain, ".org")
-		domain = strings.TrimSuffix(domain, ".net")
-		content = append(content, domain)
-	}
-
-	if parsedURL.Path != "" {
-		for _, segment := range strings.Split(strings.Trim(parsedURL.Path, "/"), "/") {
-			if segment != "" {
-				segment = strings.ReplaceAll(segment, "-", " ")
-				segment = strings.ReplaceAll(segment, "_", " ")
-				content = append(content, segment)
-			}
-		}
-	}
-
-	if parsedURL.RawQuery != "" {
-		params, _ := url.ParseQuery(parsedURL.RawQuery)
-		for key, values := range params {
-			content = append(content, key)
-			for _, value := range values {
-				content = append(content, value)
-			}
-		}
-	}
-
-	return strings.Join(content, " ")
 }
 
 func (brs *BleveRelevanceScorer) calculateRelevanceScore(content string) (float64, error) {
@@ -197,7 +150,7 @@ func (brs *BleveRelevanceScorer) GetRelevantLinks(links []LinkInfo) []LinkInfo {
 	relevant := make([]LinkInfo, 0)
 
 	for _, link := range links {
-		isRelevant, score, err := brs.IsURLRelevant(link.URL, link.Title, link.Description)
+		isRelevant, score, err := brs.IsURLRelevant(link.Title, link.Description)
 		if err != nil {
 			log.Printf("Error scoring URL %s: %v", link.URL, err)
 			continue

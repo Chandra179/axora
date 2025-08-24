@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -12,13 +13,13 @@ import (
 )
 
 type Worker struct {
-	collector        *colly.Collector
-	crawlRepo        storage.CrawlRepository
-	extractor        *ContentExtractor
-	relevanceFilter  RelevanceFilter
+	collector       *colly.Collector
+	crawlRepo       storage.CrawlRepository
+	extractor       *ContentExtractor
+	relevanceFilter RelevanceFilter
 }
 
-func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor, keywords []string, relevanceThreshold float64) *Worker {
+func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor, relevanceFilter RelevanceFilter) *Worker {
 	c := colly.NewCollector(
 		// colly.Debugger(&debug.LogDebugger{}),
 		colly.UserAgent("Axora-Crawler/1.0"),
@@ -33,13 +34,6 @@ func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor, k
 		Delay:       1 * time.Second,
 	})
 
-	// Create relevance filter with provided keywords
-	relevanceFilter, err := NewBleveRelevanceScorer(keywords, relevanceThreshold)
-	if err != nil {
-		log.Printf("Failed to create relevance filter: %v", err)
-		relevanceFilter = nil
-	}
-
 	return &Worker{
 		collector:       c,
 		crawlRepo:       crawlRepo,
@@ -51,29 +45,25 @@ func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor, k
 func (w *Worker) Crawl(ctx context.Context, urls []string) {
 	w.collector.OnHTML("a[href]", func(e *colly.HTMLElement) {
 		link := e.Attr("href")
-		
-		// Skip if no relevance filter is available
-		if w.relevanceFilter == nil {
-			w.collector.Visit(link)
-			return
-		}
-		
-		// Extract title and description for relevance check
+
+		fmt.Println("Link: " + link)
+		fmt.Println("Text: " + e.Text)
 		title := strings.TrimSpace(e.Text)
-		
+
 		// Try to get meta description from the current page context
 		metaDescription := ""
 		if metaDesc := e.DOM.Parents().Find("meta[name='description']").First(); metaDesc.Length() > 0 {
 			metaDescription, _ = metaDesc.Attr("content")
+			fmt.Println("Meta: " + metaDescription)
 		}
-		
+
 		// Check if the URL is relevant before visiting
-		isRelevant, score, err := w.relevanceFilter.IsURLRelevant(link, title, metaDescription)
+		isRelevant, score, err := w.relevanceFilter.IsURLRelevant(title, metaDescription)
 		if err != nil {
 			log.Printf("Error checking relevance for %s: %v", link, err)
 			return
 		}
-		
+
 		if isRelevant {
 			log.Printf("Following relevant link %s (score: %.3f)", link, score)
 			w.collector.Visit(link)
@@ -84,25 +74,7 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 
 	w.collector.OnScraped(func(r *colly.Response) {
 		url := r.Request.URL.String()
-
 		extractedText, _ := w.extractor.ExtractText(string(r.Body))
-		
-		// Double-check relevance with full content if filter is available
-		if w.relevanceFilter != nil {
-			isRelevant, score, err := w.relevanceFilter.IsURLRelevant(url, "", extractedText)
-			if err != nil {
-				log.Printf("Error checking content relevance for %s: %v", url, err)
-				return
-			}
-			
-			if !isRelevant {
-				log.Printf("Skipping irrelevant content from %s (score: %.3f)", url, score)
-				return
-			}
-			
-			log.Printf("Saving relevant content from %s (score: %.3f)", url, score)
-		}
-		
 		crawlData := &storage.Doc{
 			URL:        url,
 			Content:    extractedText,
