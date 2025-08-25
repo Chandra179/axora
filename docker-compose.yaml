@@ -1,21 +1,31 @@
-version: '3.8'
-
 services:
-  axora-model-service:
-    image: ghcr.io/huggingface/text-embeddings-inference:1.5
-    container_name: axora-model-service
+  axora-tei-model:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    container_name: axora-tei-model
     restart: unless-stopped
     environment:
       - MODEL_ID=sentence-transformers/all-MiniLM-L6-v2
       - PORT=80
-      - MAX_CONCURRENT_REQUESTS=512
-      - MAX_BATCH_TOKENS=16384
+      - MAX_CONCURRENT_REQUESTS=4
+      - MAX_BATCH_TOKENS=1024
+      - MAX_BATCH_REQUESTS=8
+      - NUM_SHARD=1
+      - CUDA_VISIBLE_DEVICES=""
+      - HUGGING_FACE_HUB_TOKEN=""
     ports:
       - "8000:80"
     volumes:
       - axora-model-cache:/data
     networks:
       - axora-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/health"]
       interval: 30s
@@ -37,6 +47,14 @@ services:
       - axora-mongodb-data:/data/db
     networks:
       - axora-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
     healthcheck:
       test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
       interval: 10s
@@ -81,17 +99,25 @@ services:
       MONGO_EXPRESS_PORT: ${MONGO_EXPRESS_PORT}
       APP_PORT: ${APP_PORT}
       SERP_API_KEY: ${SERP_API_KEY}
-      MODEL_SERVICE_URL: http://axora-model-service:80
+      TEI_MODEL_CLIENT_URL: http://axora-tei-model:80
       DOCKER_BUILDKIT: 1
     ports:
       - "${APP_PORT}:8080"
     depends_on:
-      axora-model-service:
+      axora-tei-model:
         condition: service_healthy
       axora-mongodb:
         condition: service_healthy
     networks:
       - axora-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1.5G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
 
 volumes:
   axora-mongodb-data:

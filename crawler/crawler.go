@@ -139,11 +139,3 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 
 	w.collector.Wait()
 }
-
-// Close cleans up resources used by the worker
-func (w *Worker) Close() error {
-	if w.relevanceFilter != nil {
-		return w.relevanceFilter.Close()
-	}
-	return nil
-}

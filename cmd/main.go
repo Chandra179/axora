@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	teiclient "axora/client"
 	"axora/config"
 	"axora/crawler"
 	"axora/search"
@@ -53,24 +54,23 @@ func main() {
 	extractor := crawler.NewContentExtractor()
 
 	// ==========
+	// TEI MODEL CLIENT
+	// ==========
+	teiClient := teiclient.NewTEIClient(cfg.TEIModelClientURL)
+
+	// ==========
 	// Relevance filter
 	// ==========
-	modelServiceURL := cfg.ModelServiceURL
-	if modelServiceURL == "" {
-		modelServiceURL = "http://axora-model-service:80"
-	}
-	
 	relevanceFilter, err := crawler.NewSemanticRelevanceFilter(
-		modelServiceURL, 
-		searchReq.Query, 
+		teiClient,
+		searchReq.Query,
 		0.7, // threshold for relevance
 	)
 	if err != nil {
 		log.Fatalf("Failed to initialize semantic relevance filter: %v", err)
 	}
-	
+
 	worker := crawler.NewWorker(crawlCollection, extractor, relevanceFilter)
-	defer worker.Close()
 
 	worker.Crawl(context.Background(), urls)
 }
