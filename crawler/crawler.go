@@ -2,9 +2,9 @@ package crawler
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"axora/storage"
@@ -12,19 +12,57 @@ import (
 	"github.com/gocolly/colly/v2"
 )
 
+type LoopDetector struct {
+	visitCounts map[string]int
+	visitOrder  []string
+	maxEntries  int
+	maxVisits   int
+	mutex       sync.RWMutex
+}
+
+func NewLoopDetector(maxEntries, maxVisits int) *LoopDetector {
+	return &LoopDetector{
+		visitCounts: make(map[string]int),
+		visitOrder:  make([]string, 0),
+		maxEntries:  maxEntries,
+		maxVisits:   maxVisits,
+	}
+}
+
+func (ld *LoopDetector) CheckLoop(url string) bool {
+	ld.mutex.Lock()
+	defer ld.mutex.Unlock()
+
+	count := ld.visitCounts[url]
+	if count >= ld.maxVisits {
+		return true
+	}
+
+	if count == 0 {
+		if len(ld.visitOrder) >= ld.maxEntries {
+			oldest := ld.visitOrder[0]
+			delete(ld.visitCounts, oldest)
+			ld.visitOrder = ld.visitOrder[1:]
+		}
+		ld.visitOrder = append(ld.visitOrder, url)
+	}
+
+	ld.visitCounts[url]++
+	return false
+}
+
 type Worker struct {
 	collector       *colly.Collector
 	crawlRepo       storage.CrawlRepository
 	extractor       *ContentExtractor
 	relevanceFilter RelevanceFilter
+	loopDetector    *LoopDetector
 }
 
 func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor, relevanceFilter RelevanceFilter) *Worker {
 	c := colly.NewCollector(
-		// colly.Debugger(&debug.LogDebugger{}),
 		colly.UserAgent("Axora-Crawler/1.0"),
-		colly.MaxDepth(2),
-		// Enable async mode for better performance
+		colly.MaxDepth(5),
 		colly.Async(true),
 	)
 
@@ -34,70 +72,50 @@ func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor, r
 		Delay:       1 * time.Second,
 	})
 
-	return &Worker{
+	loopDetector := NewLoopDetector(10000, 3)
+
+	worker := &Worker{
 		collector:       c,
 		crawlRepo:       crawlRepo,
 		extractor:       extractor,
 		relevanceFilter: relevanceFilter,
+		loopDetector:    loopDetector,
 	}
+
+	worker.setupLoopDetection()
+
+	return worker
+}
+
+func (w *Worker) setupLoopDetection() {
+	w.collector.OnRequest(func(r *colly.Request) {
+		if w.loopDetector.CheckLoop(r.URL.String()) {
+			log.Printf("Loop detected for URL: %s - aborting request", r.URL.String())
+			r.Abort()
+		}
+	})
 }
 
 func (w *Worker) Crawl(ctx context.Context, urls []string) {
-	// Store page meta description when page loads
-	w.collector.OnHTML("meta[name='description']", func(e *colly.HTMLElement) {
-		content := e.Attr("content")
-		if content != "" {
-			e.Request.Ctx.Put("page_meta_description", content)
-			fmt.Printf("Stored meta description: %s\n", content)
-		}
-	})
-
-	// Extract and store headings for semantic analysis
-	w.collector.OnHTML("h1, h2, h3", func(e *colly.HTMLElement) {
-		headingText := strings.TrimSpace(e.Text)
-		if headingText != "" {
-			existing := ""
-			if h := e.Request.Ctx.GetAny("page_headings"); h != nil {
-				if existingStr, ok := h.(string); ok {
-					existing = existingStr
-				}
-			}
-			if existing != "" {
-				existing += " " + headingText
-			} else {
-				existing = headingText
-			}
-			e.Request.Ctx.Put("page_headings", existing)
-		}
-	})
-
 	w.collector.OnHTML("a[href]", func(e *colly.HTMLElement) {
 		link := e.Attr("href")
-		title := strings.TrimSpace(e.Text)
-		timestamp := time.Now().Format("2006-01-02 15:04:05")
+		text := strings.TrimSpace(e.Text)
+		absoluteURL := e.Request.AbsoluteURL(link)
 
-		// Get meta description from the current page context
-		metaDescription := ""
-		if metaDesc := e.Request.Ctx.GetAny("page_meta_description"); metaDesc != nil {
-			if desc, ok := metaDesc.(string); ok {
-				metaDescription = desc
-			}
-		}
+		doc := e.DOM.Parents().Last()
+		title := doc.Find("title").Text()
+		metaDescription, _ := doc.Find("meta[name='description']").Attr("content")
 
-		// Check if the URL is relevant before visiting
-		isRelevant, score, err := w.relevanceFilter.IsURLRelevant(title, metaDescription)
+		context := strings.TrimSpace(text + " " + title + " " + metaDescription)
+		isRelevant, score, err := w.relevanceFilter.IsURLRelevant(context)
 		if err != nil {
-			log.Printf("[%s] Error checking relevance for URL: %s, Error: %v", timestamp, link, err)
+			log.Printf("Error checking relevance for URL: %s, Error: %v", absoluteURL, err)
 			return
 		}
-
 		if isRelevant {
-			log.Printf("[%s] Following relevant link - URL: %s, Title: '%s', Meta: '%s', Score: %.3f",
-				timestamp, link, title, metaDescription, score)
-			w.collector.Visit(link)
-		} else {
-			log.Printf("[%s] Skipping irrelevant link - URL: %s, Title: '%s', Meta: '%s', Score: %.3f",
-				timestamp, link, title, metaDescription, score)
+			log.Printf("relevant link - URL: %s, Context: %s, Score: %.3f", absoluteURL, context, score)
+			e.Request.Visit(absoluteURL)
+			return
 		}
 	})
 
@@ -113,21 +131,10 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 			CrawledAt:  timestamp,
 		}
 
-		log.Printf("[%s] Scraped content - URL: %s, Status: %d, Content length: %d chars, Content preview: '%.200s...'",
-			timestamp.Format("2006-01-02 15:04:05"), url, r.StatusCode, len(extractedText), extractedText)
-
 		_, err := w.crawlRepo.InsertOne(ctx, crawlData)
 		if err != nil {
 			log.Printf("[%s] Failed to save URL: %s, Error: %v", timestamp.Format("2006-01-02 15:04:05"), url, err)
-		} else {
-			log.Printf("[%s] Successfully saved URL: %s to database", timestamp.Format("2006-01-02 15:04:05"), url)
 		}
-	})
-
-	w.collector.OnResponse(func(r *colly.Response) {
-		timestamp := time.Now().Format("2006-01-02 15:04:05")
-		log.Printf("[%s] HTTP Response - URL: %s, Status: %d, Content-Length: %d bytes",
-			timestamp, r.Request.URL, r.StatusCode, len(r.Body))
 	})
 
 	for _, url := range urls {

@@ -7,6 +7,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type CrawlRepository interface {
@@ -27,8 +28,20 @@ type Doc struct {
 }
 
 func NewCrawlCollection(db *mongo.Database) *CrawlCollection {
+	collection := db.Collection("crawled_documents")
+
+	// Create unique index on URL field
+	ctx := context.Background()
+	indexModel := mongo.IndexModel{
+		Keys: bson.D{{Key: "url", Value: 1}},
+		Options: &options.IndexOptions{
+			Unique: &[]bool{true}[0],
+		},
+	}
+	collection.Indexes().CreateOne(ctx, indexModel)
+
 	return &CrawlCollection{
-		docCollection: db.Collection("crawled_documents"),
+		docCollection: collection,
 	}
 }
 

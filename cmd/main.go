@@ -38,8 +38,8 @@ func main() {
 	// ==========
 	searchEngine := search.NewSerpApiSearchEngine(cfg.SerpApiKey)
 	searchReq := &search.SearchRequest{
-		Query:    "information retrieval for llm",
-		MaxPages: 5,
+		Query:    "data representation for ai data training",
+		MaxPages: 3,
 	}
 
 	searchResults, err := searchEngine.Search(context.Background(), searchReq)
@@ -64,7 +64,7 @@ func main() {
 	relevanceFilter, err := crawler.NewSemanticRelevanceFilter(
 		teiClient,
 		searchReq.Query,
-		0.7, // threshold for relevance
+		0.61, // threshold for relevance
 	)
 	if err != nil {
 		log.Fatalf("Failed to initialize semantic relevance filter: %v", err)

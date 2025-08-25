@@ -9,7 +9,7 @@ import (
 
 // RelevanceFilter defines the interface for URL relevance filtering
 type RelevanceFilter interface {
-	IsURLRelevant(source, target string) (bool, float64, error)
+	IsURLRelevant(content string) (bool, float64, error)
 }
 
 // SemanticRelevanceFilter implements semantic similarity-based relevance filtering using TEI
@@ -36,17 +36,10 @@ func NewSemanticRelevanceFilter(teiClient client.TEIHandler, query string, thres
 }
 
 // IsURLRelevant checks if a URL is relevant based on semantic similarity
-func (s *SemanticRelevanceFilter) IsURLRelevant(title, description string) (bool, float64, error) {
-	// Combine title and description for content analysis
-	content := title
-	if description != "" {
-		content += " " + description
-	}
-
+func (s *SemanticRelevanceFilter) IsURLRelevant(content string) (bool, float64, error) {
 	if content == "" {
 		return false, 0.0, nil
 	}
-
 	ctx := context.Background()
 	embeddings, err := s.teiClient.GetEmbeddings(ctx, []string{content})
 	if err != nil {
