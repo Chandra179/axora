@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"time"
 
-	teiclient "axora/client"
+	"axora/client"
 	"axora/config"
 	"axora/crawler"
 	"axora/search"
@@ -25,28 +26,19 @@ func main() {
 	// ==========
 	// DATABASE
 	// ==========
-	client, err := initMongoDB(cfg)
+	mongo, err := initMongoDB(cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize MongoDB: %v", err)
 	}
 
-	db := client.Database(cfg.MongoDatabase)
+	db := mongo.Database(cfg.MongoDatabase)
 	crawlCollection := storage.NewCrawlCollection(db)
 
 	// ==========
 	// SEARCH
 	// ==========
-	searchEngine := search.NewSerpApiSearchEngine(cfg.SerpApiKey)
-	searchReq := &search.SearchRequest{
-		Query:    "data representation for ai data training",
-		MaxPages: 3,
-	}
-
-	searchResults, err := searchEngine.Search(context.Background(), searchReq)
-	if err != nil {
-		log.Fatalf("Failed to search: %v", err)
-	}
-	urls := extractURLsFromSearchResults(searchResults)
+	serp := search.NewSerpApiSearchEngine(cfg.SerpApiKey)
+	http.Handle("/search", client.SearchHandler(serp))
 
 	// ==========
 	// EXTRACTOR
@@ -56,15 +48,16 @@ func main() {
 	// ==========
 	// TEI MODEL CLIENT
 	// ==========
-	teiClient := teiclient.NewTEIClient(cfg.TEIModelClientURL)
+	teiClient := client.NewTEIClient(cfg.TEIModelClientURL)
 
 	// ==========
 	// Relevance filter
 	// ==========
 	relevanceFilter, err := crawler.NewSemanticRelevanceFilter(
 		teiClient,
-		searchReq.Query,
-		0.61, // threshold for relevance
+		// searchReq.Query,
+		"software engineer",
+		0.61,
 	)
 	if err != nil {
 		log.Fatalf("Failed to initialize semantic relevance filter: %v", err)
@@ -72,7 +65,8 @@ func main() {
 
 	worker := crawler.NewWorker(crawlCollection, extractor, relevanceFilter)
 
-	worker.Crawl(context.Background(), urls)
+	worker.Crawl(context.Background(), []string{"https://news.ycombinator.com/"})
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 func initMongoDB(cfg *config.Config) (*mongo.Client, error) {
@@ -90,14 +84,4 @@ func initMongoDB(cfg *config.Config) (*mongo.Client, error) {
 	}
 
 	return client, nil
-}
-
-func extractURLsFromSearchResults(results []search.SearchResult) []string {
-	urls := make([]string, 0, len(results))
-	for _, result := range results {
-		if result.URL != "" {
-			urls = append(urls, result.URL)
-		}
-	}
-	return urls
 }

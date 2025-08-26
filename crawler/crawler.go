@@ -2,54 +2,16 @@ package crawler
 
 import (
 	"context"
+	"fmt"
 	"log"
+	"net/url"
 	"strings"
-	"sync"
 	"time"
 
 	"axora/storage"
 
 	"github.com/gocolly/colly/v2"
 )
-
-type LoopDetector struct {
-	visitCounts map[string]int
-	visitOrder  []string
-	maxEntries  int
-	maxVisits   int
-	mutex       sync.RWMutex
-}
-
-func NewLoopDetector(maxEntries, maxVisits int) *LoopDetector {
-	return &LoopDetector{
-		visitCounts: make(map[string]int),
-		visitOrder:  make([]string, 0),
-		maxEntries:  maxEntries,
-		maxVisits:   maxVisits,
-	}
-}
-
-func (ld *LoopDetector) CheckLoop(url string) bool {
-	ld.mutex.Lock()
-	defer ld.mutex.Unlock()
-
-	count := ld.visitCounts[url]
-	if count >= ld.maxVisits {
-		return true
-	}
-
-	if count == 0 {
-		if len(ld.visitOrder) >= ld.maxEntries {
-			oldest := ld.visitOrder[0]
-			delete(ld.visitCounts, oldest)
-			ld.visitOrder = ld.visitOrder[1:]
-		}
-		ld.visitOrder = append(ld.visitOrder, url)
-	}
-
-	ld.visitCounts[url]++
-	return false
-}
 
 type Worker struct {
 	collector       *colly.Collector
@@ -62,17 +24,16 @@ type Worker struct {
 func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor, relevanceFilter RelevanceFilter) *Worker {
 	c := colly.NewCollector(
 		colly.UserAgent("Axora-Crawler/1.0"),
-		colly.MaxDepth(5),
+		colly.MaxDepth(2),
 		colly.Async(true),
 	)
 
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 2,
-		Delay:       1 * time.Second,
+		Parallelism: 3,
 	})
 
-	loopDetector := NewLoopDetector(10000, 3)
+	loopDetector := NewLoopDetector(3)
 
 	worker := &Worker{
 		collector:       c,
@@ -82,58 +43,81 @@ func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor, r
 		loopDetector:    loopDetector,
 	}
 
-	worker.setupLoopDetection()
-
 	return worker
 }
 
-func (w *Worker) setupLoopDetection() {
-	w.collector.OnRequest(func(r *colly.Request) {
-		if w.loopDetector.CheckLoop(r.URL.String()) {
-			log.Printf("Loop detected for URL: %s - aborting request", r.URL.String())
-			r.Abort()
-		}
-	})
+// TruncateString approximates token length by character count.
+// Safe upper bound: ~4 chars ≈ 1 token (English).
+// So for 1024 tokens, use ~4000 chars.
+func truncateText(text string, maxTokens int) string {
+	// Simple approximation: ~4 chars per token for English
+	maxChars := maxTokens * 4
+	if len(text) <= maxChars {
+		return text
+	}
+	return text[:maxChars]
+}
+
+func isVisitableURL(str string) bool {
+	u, err := url.ParseRequestURI(str)
+	if err != nil {
+		return false // not even a valid URI
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	if u.Host == "" {
+		return false
+	}
+	return true
 }
 
 func (w *Worker) Crawl(ctx context.Context, urls []string) {
+	w.collector.OnRequest(func(r *colly.Request) {
+		w.loopDetector.IncVisit(r.URL.String())
+	})
+
 	w.collector.OnHTML("a[href]", func(e *colly.HTMLElement) {
 		link := e.Attr("href")
-		text := strings.TrimSpace(e.Text)
 		absoluteURL := e.Request.AbsoluteURL(link)
-
-		doc := e.DOM.Parents().Last()
-		title := doc.Find("title").Text()
-		metaDescription, _ := doc.Find("meta[name='description']").Attr("content")
-
-		context := strings.TrimSpace(text + " " + title + " " + metaDescription)
-		isRelevant, score, err := w.relevanceFilter.IsURLRelevant(context)
-		if err != nil {
-			log.Printf("Error checking relevance for URL: %s, Error: %v", absoluteURL, err)
+		if !isVisitableURL(absoluteURL) {
 			return
 		}
-		if isRelevant {
-			log.Printf("relevant link - URL: %s, Context: %s, Score: %.3f", absoluteURL, context, score)
-			e.Request.Visit(absoluteURL)
+		if w.loopDetector.CheckLoop(absoluteURL) {
+			log.Printf("[LOOP_DETECTOR] BLOCKING URL: %s - exceeded max visits %d", absoluteURL, w.loopDetector.maxVisits)
 			return
 		}
+		e.Request.Visit(absoluteURL)
 	})
 
 	w.collector.OnScraped(func(r *colly.Response) {
 		url := r.Request.URL.String()
-		extractedText, _ := w.extractor.ExtractText(string(r.Body), r.Request.URL)
+		content, _ := w.extractor.ExtractText(string(r.Body), r.Request.URL)
 		timestamp := time.Now()
+		if strings.TrimSpace(content) == "" {
+			return
+		}
+		tc := truncateText(content, 200)
+		fmt.Println("content: " + tc)
+		isRelevant, score, err := w.relevanceFilter.IsURLRelevant(tc)
+		if err != nil {
+			log.Printf("Error checking relevance for URL: %s Error: %v", url, err)
+			return
+		}
+		log.Printf("URL: %s Score: %.3f", url, score)
+		if !isRelevant {
+			return
+		}
 
 		crawlData := &storage.Doc{
 			URL:        url,
-			Content:    extractedText,
+			Content:    content,
 			Statuscode: r.StatusCode,
 			CrawledAt:  timestamp,
 		}
-
-		_, err := w.crawlRepo.InsertOne(ctx, crawlData)
+		_, err = w.crawlRepo.InsertOne(ctx, crawlData)
 		if err != nil {
-			log.Printf("[%s] Failed to save URL: %s, Error: %v", timestamp.Format("2006-01-02 15:04:05"), url, err)
+			log.Printf("[%s] Failed to save URL: %s Error: %v", timestamp.Format("2006-01-02 15:04:05"), url, err)
 		}
 	})
 

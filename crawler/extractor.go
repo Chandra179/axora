@@ -15,7 +15,6 @@ func NewContentExtractor() *ContentExtractor {
 }
 
 func (ce *ContentExtractor) ExtractText(htmlContent string, url *url.URL) (string, error) {
-	fmt.Println("Starting text extraction with go-readability")
 	article, err := readability.FromReader(strings.NewReader(htmlContent), url)
 	if err != nil {
 		fmt.Printf("Error processing with readability: %v\n", err)
@@ -25,6 +24,5 @@ func (ce *ContentExtractor) ExtractText(htmlContent string, url *url.URL) (strin
 	extractedText := strings.TrimSpace(article.TextContent)
 	extractedText = strings.Join(strings.Fields(extractedText), " ")
 
-	fmt.Printf("Extracted text length: %d characters\n", len(extractedText))
 	return extractedText, nil
 }
