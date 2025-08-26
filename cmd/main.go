@@ -47,22 +47,25 @@ func main() {
 	// ==========
 	// Relevance filter
 	// ==========
-	relevanceFilter, err := crawler.NewSemanticRelevanceFilter(
-		teiClient,
-		// searchReq.Query,
-		"software engineer",
-		0.61,
-	)
+	semanticRelevance, err := crawler.NewSemanticRelevanceFilter(teiClient, 0.61)
 	if err != nil {
 		log.Fatalf("Failed to initialize semantic relevance filter: %v", err)
 	}
-	worker := crawler.NewWorker(crawlCollection, extractor, relevanceFilter)
+
+	// ==========
+	// Crawler worker
+	// ==========
+	worker := crawler.NewWorker(crawlCollection, extractor)
+
+	// ==========
+	// Search
+	// ==========
+	serp := search.NewSerpApiSearchEngine(cfg.SerpApiKey)
 
 	// ==========
 	// HTTP
 	// ==========
-	serp := search.NewSerpApiSearchEngine(cfg.SerpApiKey)
-	http.Handle("/search", CrawlFromSearch(serp, worker))
+	http.Handle("/search", SemanticCrawl(serp, worker, teiClient, semanticRelevance))
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
@@ -84,11 +87,17 @@ func initMongoDB(cfg *config.Config) (*mongo.Client, error) {
 	return client, nil
 }
 
-func CrawlFromSearch(serp *search.SerpApiSearchEngine, worker *crawler.Worker) http.HandlerFunc {
+func SemanticCrawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
+	teiClient *client.TEIClient, sem *crawler.SemanticRelevanceFilter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query().Get("query")
+		crawlType := r.URL.Query().Get("crawl_type")
 		if query == "" {
 			http.Error(w, "missing query parameter", http.StatusBadRequest)
+			return
+		}
+		if crawlType == "" {
+			http.Error(w, "missing crawl_type parameter", http.StatusBadRequest)
 			return
 		}
 		searchResults, _ := serp.Search(context.Background(), &search.SearchRequest{
@@ -99,6 +108,23 @@ func CrawlFromSearch(serp *search.SerpApiSearchEngine, worker *crawler.Worker) h
 		for i := 0; i < len(searchResults); i++ {
 			res = append(res, searchResults[i].URL)
 		}
-		worker.Crawl(context.Background(), res)
+
+		var filter crawler.RelevanceFilter
+		if crawlType == "semantic" {
+			ctx := context.Background()
+			embeddings, err := teiClient.GetEmbeddings(ctx, []string{query})
+			if err != nil {
+				http.Error(w, "error tei model", http.StatusInternalServerError)
+			}
+			sem.QueryEmbedding = embeddings[0]
+			filter = sem
+		} else {
+			rf, err := crawler.NewKeywordRelevanceFilter(query)
+			if err != nil {
+				http.Error(w, "error keyword relevancne filter", http.StatusInternalServerError)
+			}
+			filter = rf
+		}
+		worker.Crawl(context.Background(), filter, res)
 	}
 }

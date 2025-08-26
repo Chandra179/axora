@@ -21,7 +21,7 @@ type Worker struct {
 	loopDetector    *LoopDetector
 }
 
-func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor, relevanceFilter RelevanceFilter) *Worker {
+func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor) *Worker {
 	c := colly.NewCollector(
 		colly.UserAgent("Axora-Crawler/1.0"),
 		colly.MaxDepth(2),
@@ -36,11 +36,10 @@ func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor, r
 	loopDetector := NewLoopDetector(3)
 
 	worker := &Worker{
-		collector:       c,
-		crawlRepo:       crawlRepo,
-		extractor:       extractor,
-		relevanceFilter: relevanceFilter,
-		loopDetector:    loopDetector,
+		collector:    c,
+		crawlRepo:    crawlRepo,
+		extractor:    extractor,
+		loopDetector: loopDetector,
 	}
 
 	return worker
@@ -72,7 +71,10 @@ func isVisitableURL(str string) bool {
 	return true
 }
 
-func (w *Worker) Crawl(ctx context.Context, urls []string) {
+func (w *Worker) Crawl(ctx context.Context, relevanceFilter RelevanceFilter, urls []string) {
+	// Configured on runtime
+	w.relevanceFilter = relevanceFilter
+
 	w.collector.OnRequest(func(r *colly.Request) {
 		w.loopDetector.IncVisit(r.URL.String())
 	})

@@ -3,6 +3,7 @@ module axora
 go 1.25.0
 
 require (
+	github.com/cloudflare/ahocorasick v0.0.0-20240916140611-054963ec9396
 	github.com/go-shiori/go-readability v0.0.0-20250217085726-9f5bf5ca7612
 	github.com/gocolly/colly/v2 v2.2.0
 	go.mongodb.org/mongo-driver v1.17.4
