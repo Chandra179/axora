@@ -35,12 +35,6 @@ func main() {
 	crawlCollection := storage.NewCrawlCollection(db)
 
 	// ==========
-	// SEARCH
-	// ==========
-	serp := search.NewSerpApiSearchEngine(cfg.SerpApiKey)
-	http.Handle("/search", client.SearchHandler(serp))
-
-	// ==========
 	// EXTRACTOR
 	// ==========
 	extractor := crawler.NewContentExtractor()
@@ -62,10 +56,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize semantic relevance filter: %v", err)
 	}
-
 	worker := crawler.NewWorker(crawlCollection, extractor, relevanceFilter)
 
-	worker.Crawl(context.Background(), []string{"https://news.ycombinator.com/"})
+	// ==========
+	// HTTP
+	// ==========
+	serp := search.NewSerpApiSearchEngine(cfg.SerpApiKey)
+	http.Handle("/search", CrawlFromSearch(serp, worker))
+
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
@@ -84,4 +82,23 @@ func initMongoDB(cfg *config.Config) (*mongo.Client, error) {
 	}
 
 	return client, nil
+}
+
+func CrawlFromSearch(serp *search.SerpApiSearchEngine, worker *crawler.Worker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		query := r.URL.Query().Get("query")
+		if query == "" {
+			http.Error(w, "missing query parameter", http.StatusBadRequest)
+			return
+		}
+		searchResults, _ := serp.Search(context.Background(), &search.SearchRequest{
+			Query:    query,
+			MaxPages: 2,
+		})
+		res := make([]string, len(searchResults))
+		for i := 0; i < len(searchResults); i++ {
+			res = append(res, searchResults[i].URL)
+		}
+		worker.Crawl(context.Background(), res)
+	}
 }
