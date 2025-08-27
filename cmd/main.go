@@ -65,7 +65,7 @@ func main() {
 	// ==========
 	// HTTP
 	// ==========
-	http.Handle("/search", SemanticCrawl(serp, worker, teiClient, semanticRelevance))
+	http.Handle("/search", Crawl(serp, worker, teiClient, semanticRelevance))
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
@@ -87,11 +87,11 @@ func initMongoDB(cfg *config.Config) (*mongo.Client, error) {
 	return client, nil
 }
 
-func SemanticCrawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
+func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
 	teiClient *client.TEIClient, sem *crawler.SemanticRelevanceFilter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		query := r.URL.Query().Get("query")
-		crawlType := r.URL.Query().Get("crawl_type")
+		query := r.URL.Query().Get("q")
+		crawlType := r.URL.Query().Get("ct")
 		if query == "" {
 			http.Error(w, "missing query parameter", http.StatusBadRequest)
 			return
@@ -100,13 +100,17 @@ func SemanticCrawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
 			http.Error(w, "missing crawl_type parameter", http.StatusBadRequest)
 			return
 		}
+
+		// ==========
+		// Seed urls
+		// ==========
 		searchResults, _ := serp.Search(context.Background(), &search.SearchRequest{
 			Query:    query,
 			MaxPages: 2,
 		})
-		res := make([]string, len(searchResults))
+		urls := make([]string, len(searchResults))
 		for i := 0; i < len(searchResults); i++ {
-			res = append(res, searchResults[i].URL)
+			urls = append(urls, searchResults[i].URL)
 		}
 
 		var filter crawler.RelevanceFilter
@@ -125,6 +129,6 @@ func SemanticCrawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
 			}
 			filter = rf
 		}
-		worker.Crawl(context.Background(), filter, res)
+		worker.Crawl(context.Background(), filter, urls)
 	}
 }
