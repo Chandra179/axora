@@ -2,7 +2,6 @@ package crawler
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/url"
 	"strings"
@@ -24,7 +23,7 @@ type Worker struct {
 func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor) *Worker {
 	c := colly.NewCollector(
 		colly.UserAgent("Axora-Crawler/1.0"),
-		colly.MaxDepth(2),
+		colly.MaxDepth(5),
 		colly.Async(true),
 	)
 
@@ -43,18 +42,6 @@ func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor) *
 	}
 
 	return worker
-}
-
-// TruncateString approximates token length by character count.
-// Safe upper bound: ~4 chars ≈ 1 token (English).
-// So for 1024 tokens, use ~4000 chars.
-func truncateText(text string, maxTokens int) string {
-	// Simple approximation: ~4 chars per token for English
-	maxChars := maxTokens * 4
-	if len(text) <= maxChars {
-		return text
-	}
-	return text[:maxChars]
 }
 
 func isVisitableURL(str string) bool {
@@ -99,9 +86,7 @@ func (w *Worker) Crawl(ctx context.Context, relevanceFilter RelevanceFilter, url
 		if strings.TrimSpace(content) == "" {
 			return
 		}
-		tc := truncateText(content, 200)
-		fmt.Println("content: " + tc)
-		isRelevant, score, err := w.relevanceFilter.IsURLRelevant(tc)
+		isRelevant, score, err := w.relevanceFilter.IsURLRelevant(content)
 		if err != nil {
 			log.Printf("Error checking relevance for URL: %s Error: %v", url, err)
 			return

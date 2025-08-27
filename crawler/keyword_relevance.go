@@ -41,6 +41,21 @@ func (f *KeywordRelevanceFilter) IsURLRelevant(content string) (bool, float64, e
 		return false, 0.0, nil
 	}
 	contentLower := strings.ToLower(content)
-	isMatch := f.matcher.Contains([]byte(contentLower))
-	return isMatch, 0.0, nil
+
+	// Run Aho-Corasick matcher
+	matches := f.matcher.MatchThreadSafe([]byte(contentLower))
+	if len(matches) == 0 {
+		return false, 0.0, nil
+	}
+
+	// Count unique matches for scoring
+	found := make(map[string]struct{})
+	for _, idx := range matches {
+		found[f.keywords[idx]] = struct{}{}
+	}
+
+	// Score: fraction of keywords found
+	score := float64(len(found)) / float64(len(f.keywords))
+
+	return true, score, nil
 }

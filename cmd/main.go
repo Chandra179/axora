@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -90,45 +91,54 @@ func initMongoDB(cfg *config.Config) (*mongo.Client, error) {
 func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
 	teiClient *client.TEIClient, sem *crawler.SemanticRelevanceFilter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		query := r.URL.Query().Get("q")
-		crawlType := r.URL.Query().Get("ct")
-		if query == "" {
-			http.Error(w, "missing query parameter", http.StatusBadRequest)
+		type RequestBody struct {
+			Query     string `json:"query"`
+			CrawlType string `json:"crawl_type"`
+		}
+
+		var body RequestBody
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
 			return
 		}
-		if crawlType == "" {
-			http.Error(w, "missing crawl_type parameter", http.StatusBadRequest)
+
+		if body.Query == "" {
+			http.Error(w, "missing query field", http.StatusBadRequest)
+			return
+		}
+		if body.CrawlType == "" {
+			http.Error(w, "missing crawl_type field", http.StatusBadRequest)
 			return
 		}
 
 		// ==========
 		// Seed urls
 		// ==========
-		searchResults, _ := serp.Search(context.Background(), &search.SearchRequest{
-			Query:    query,
-			MaxPages: 2,
-		})
-		urls := make([]string, len(searchResults))
-		for i := 0; i < len(searchResults); i++ {
-			urls = append(urls, searchResults[i].URL)
-		}
+		// searchResults, _ := serp.Search(context.Background(), &search.SearchRequest{
+		// 	Query:    query,
+		// 	MaxPages: 2,
+		// })
+		// urls := make([]string, len(searchResults))
+		// for i := 0; i < len(searchResults); i++ {
+		// 	urls = append(urls, searchResults[i].URL)
+		// }
 
 		var filter crawler.RelevanceFilter
-		if crawlType == "semantic" {
+		if body.CrawlType == "semantic" {
 			ctx := context.Background()
-			embeddings, err := teiClient.GetEmbeddings(ctx, []string{query})
+			embeddings, err := teiClient.GetEmbeddings(ctx, []string{body.Query})
 			if err != nil {
 				http.Error(w, "error tei model", http.StatusInternalServerError)
 			}
 			sem.QueryEmbedding = embeddings[0]
 			filter = sem
 		} else {
-			rf, err := crawler.NewKeywordRelevanceFilter(query)
+			rf, err := crawler.NewKeywordRelevanceFilter(body.Query)
 			if err != nil {
 				http.Error(w, "error keyword relevancne filter", http.StatusInternalServerError)
 			}
 			filter = rf
 		}
-		worker.Crawl(context.Background(), filter, urls)
+		worker.Crawl(context.Background(), filter, []string{"https://news.ycombinator.com/"})
 	}
 }

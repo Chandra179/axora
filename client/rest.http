@@ -1,1 +1,7 @@
-GET http://localhost:8080/search?q=neural+networks&ct=keywords
+POST http://localhost:8080/search
+Content-Type: application/json
+
+{
+  "query": "neural networks, deep learning, machine learning, ai agents, llm, transfer learning, nlp, fine-tuning, multimodal AI, natural language processing, gradient descent, backpropagation, self attention, transformers",
+  "crawl_type": "keywords"
+}
