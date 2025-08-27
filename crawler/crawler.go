@@ -23,7 +23,7 @@ type Worker struct {
 func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor) *Worker {
 	c := colly.NewCollector(
 		colly.UserAgent("Axora-Crawler/1.0"),
-		colly.MaxDepth(5),
+		colly.MaxDepth(10),
 		colly.Async(true),
 	)
 

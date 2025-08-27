@@ -2,39 +2,26 @@
 
 An intelligent web crawler that uses semantic similarity to filter relevant content based on search queries. Axora combines traditional web crawling with modern NLP techniques to collect and store only the most relevant web content.
 
-## Core Components
-1. **Search Engine** (`search/`): SerpAPI integration for initial URL discovery
-2. **Crawler** (`crawler/`): Web crawling engine with semantic filtering
-3. **Content Extractor** (`crawler/extractor.go`): Clean text extraction from HTML
-4. **Relevance Filter** (`crawler/relevance.go`): Semantic similarity-based URL filtering
-5. **TEI Client** (`client/`): Text Embeddings Inference client for AI model communication
-6. **Storage** (`storage/`): MongoDB integration for data persistence
-7. **Configuration** (`config/`): Environment-based configuration management
+## Crawling (go-colly)
+- Using go-colly, with configurable(depth)
+- Loop detector for visiting URLs, prevent multiple visits on the same url
+- Scraping html content
 
-## Algorithm: Sentence-BERT (all-MiniLM-L6-v2)
-- Optimized for 3-100 word queries (typical search length)
+## Content extractor (go-readability)
+- extracting html content body
+
+## Relevance filter
+Checking if html content is relevant to given query
+
+### Cosine similarity using all-MiniLM-L6-v2
+- Prefer for 7-100 word with meaning for better result
 - Strong semantic understanding (matches concepts, not just keywords)
-- Fast inference (~50ms per comparison)
 - Multilingual support
 - 384-dimensional embeddings
 
-## Project Structure
-
-```
-axora/
-├── cmd/main.go              # Application entry point
-├── client/                  # TEI model client
-├── config/                  # Configuration management
-├── crawler/                 # Web crawling logic
-│   ├── crawler.go          # Main crawler worker
-│   ├── extractor.go        # Content extraction
-│   └── relevance.go        # Semantic filtering
-├── search/                  # Search engine integrations
-├── storage/                 # Database operations
-├── docker-compose.yaml     # Service orchestration
-├── Dockerfile             # Application container
-└── Makefile              # Build commands
-```
+### Keywords filter Aho-corasick
+- Filtering content that only includes any of keywords, ex: "abc, neural network, llm"
+- Ex: 200 words content, check if any words/multi-word in the content includes "keywords"
 
 ## Loop detection
 ```
@@ -58,3 +45,34 @@ start -> pageA -> pageB -> pageA -> pageB -> pageA...
 start -> level1 -> level2 -> level3 -> back_to_level2 -> level3 -> back_to_level2...
 - Depth limit: Prevents going too deep
 - Loop detection: Prevents the level2 ↔ level3 ping-pong
+
+## Collections
+```json
+{
+  "_id" : "68aebe024b1dc2e2de726227",
+  "url": "https://www.ycombinator.com/companies/mbodi-ai/jobs/ftTsxcl-founding-research-engineer",
+  "content": "Embodied AI Platform for Industrial RoboticsFounding Research ...", //html body (text) still need to be cleaned
+  "crawled_at": "ISODate('2025-08-27T08:16:20.374Z')"
+}
+```
+
+## Vector
+- Using semantic chunking embeddings (500–1000 tokens, ~100 overlap)
+- Vector search finds semantically similar chunks, but you often want filters:
+  ```
+  language = en
+  entities.ORG = "Mbodi AI"
+  date > 2025-01-01
+  ```
+
+```json
+{ // REQUEST to vector db
+  "id": "docid_chunk0",
+  "embedding": [0.024, -0.138, 0.556],
+  "metadata": {
+    "doc_id": "...",
+    "chunk_index": 0,
+    "text": "Responsibilities include designing motion planning..."
+  }
+}
+```
