@@ -6,3 +6,6 @@ ins:
 
 go:
 	docker compose up -d
+
+nocache:
+	DOCKER_BUILDKIT=1 docker compose build --no-cache axora-crawler

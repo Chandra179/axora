@@ -118,7 +118,8 @@ services:
       MONGO_EXPRESS_PORT: ${MONGO_EXPRESS_PORT}
       APP_PORT: ${APP_PORT}
       SERP_API_KEY: ${SERP_API_KEY}
-      TEI_MODEL_CLIENT_URL: http://axora-tei-model:80
+      TEI_MODEL_CLIENT_URL: ${TEI_MODEL_CLIENT_URL}
+      WEAVIATE_URL: ${WEAVIATE_URL}
       DOCKER_BUILDKIT: 1
     ports:
       - "${APP_PORT}:8080"
@@ -138,7 +139,62 @@ services:
           cpus: '0.5'
           memory: 512M
 
+  axora-weaviate:
+    command:
+    - --host
+    - 0.0.0.0
+    - --port
+    - '8082'
+    - --scheme
+    - http
+    image: cr.weaviate.io/semitechnologies/weaviate:latest
+    container_name: axora-weaviate
+    ports:
+    - "8082:8082"
+    restart: on-failure:0
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
+      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
+      ENABLE_API_BASED_MODULES: 'true'
+      ENABLE_MODULES: 'text2vec-huggingface'
+      HUGGINGFACE_EMBEDDINGS_URL: 'http://axora-tei-model:80' 
+      CLUSTER_HOSTNAME: 'node1'
+    networks:
+      - axora-network
+    volumes:
+      - axora-weaviate-data:/var/lib/weaviate
+    deploy:
+      resources:  
+        limits:
+          cpus: '1.5'
+          memory: 1.5G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  axora-weaviate-console:
+    image: semitechnologies/weaviate-console:latest
+    container_name: axora-weaviate-console
+    ports:
+      - "8083:80"
+    restart: on-failure:0
+    environment:
+      WEAVIATE_URL: http://axora-weaviate:8082
+      DEFAULTS__NO_AUTH: "true"
+    networks:
+      - axora-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.5'
+          memory: 1.5G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
 volumes:
+  axora-weaviate-data:
   axora-mongodb-data:
   axora-model-cache:
 

@@ -14,6 +14,7 @@ import (
 	"axora/search"
 	"axora/storage"
 
+	"github.com/weaviate/weaviate-go-client/v5/weaviate"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -27,13 +28,15 @@ func main() {
 	// ==========
 	// DATABASE
 	// ==========
-	mongo, err := initMongoDB(cfg)
+	mongo, err := initMongoDB(cfg.MongoURL)
 	if err != nil {
 		log.Fatalf("Failed to initialize MongoDB: %v", err)
 	}
 
 	db := mongo.Database(cfg.MongoDatabase)
 	crawlCollection := storage.NewCrawlCollection(db)
+
+	initWeavite(cfg.WeaviateURL)
 
 	// ==========
 	// EXTRACTOR
@@ -71,11 +74,30 @@ func main() {
 	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
-func initMongoDB(cfg *config.Config) (*mongo.Client, error) {
+func initWeavite(url string) {
+	cfg := weaviate.Config{
+		Host:   url,
+		Scheme: "http",
+	}
+
+	client, err := weaviate.NewClient(cfg)
+	if err != nil {
+		fmt.Println(err)
+	}
+
+	// Check the connection
+	ready, err := client.Misc().ReadyChecker().Do(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%v", ready)
+}
+
+func initMongoDB(url string) (*mongo.Client, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	clientOptions := options.Client().ApplyURI(cfg.MongoURL)
+	clientOptions := options.Client().ApplyURI(url)
 	client, err := mongo.Connect(ctx, clientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)

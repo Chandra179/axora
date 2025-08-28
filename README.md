@@ -56,7 +56,7 @@ start -> level1 -> level2 -> level3 -> back_to_level2 -> level3 -> back_to_level
 }
 ```
 
-## Vector
+## Vector (pinecone)
 - Using semantic chunking embeddings (500–1000 tokens, ~100 overlap)
 - Vector search finds semantically similar chunks, but you often want filters:
   ```

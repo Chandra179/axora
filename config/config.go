@@ -19,8 +19,10 @@ type Config struct {
 
 	AppPort int
 
-	SerpApiKey string
+	SerpApiKey        string
 	TEIModelClientURL string
+
+	WeaviateURL string
 }
 
 func Load() (*Config, error) {
@@ -52,8 +54,10 @@ func Load() (*Config, error) {
 
 		AppPort: appPort,
 
-		SerpApiKey: getEnv("SERP_API_KEY"),
-		TEIModelClientURL: os.Getenv("TEI_MODEL_CLIENT_URL"),
+		SerpApiKey:        getEnv("SERP_API_KEY"),
+		TEIModelClientURL: getEnv("TEI_MODEL_CLIENT_URL"),
+
+		WeaviateURL: getEnv("WEAVIATE_URL"),
 	}, nil
 }
 
