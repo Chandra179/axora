@@ -7,20 +7,21 @@ import (
 	"strings"
 	"time"
 
-	"axora/storage"
+	"axora/repository"
 
 	"github.com/gocolly/colly/v2"
 )
 
 type Worker struct {
 	collector       *colly.Collector
-	crawlRepo       storage.CrawlRepository
+	crawlRepo       repository.CrawlCollectionRepo
+	vectorRepo      repository.CrawlVectorRepo
 	extractor       *ContentExtractor
 	relevanceFilter RelevanceFilter
 	loopDetector    *LoopDetector
 }
 
-func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor) *Worker {
+func NewWorker(crawlRepo repository.CrawlCollectionRepo, vectorRepo repository.CrawlVectorRepo, extractor *ContentExtractor) *Worker {
 	c := colly.NewCollector(
 		colly.UserAgent("Axora-Crawler/1.0"),
 		colly.MaxDepth(10),
@@ -37,6 +38,7 @@ func NewWorker(crawlRepo storage.CrawlRepository, extractor *ContentExtractor) *
 	worker := &Worker{
 		collector:    c,
 		crawlRepo:    crawlRepo,
+		vectorRepo:   vectorRepo,
 		extractor:    extractor,
 		loopDetector: loopDetector,
 	}
@@ -96,15 +98,23 @@ func (w *Worker) Crawl(ctx context.Context, relevanceFilter RelevanceFilter, url
 			return
 		}
 
-		crawlData := &storage.Doc{
+		crawlData := &repository.CrawlCollectionDoc{
 			URL:        url,
 			Content:    content,
 			Statuscode: r.StatusCode,
 			CrawledAt:  timestamp,
 		}
-		_, err = w.crawlRepo.InsertOne(ctx, crawlData)
+		err = w.crawlRepo.InsertOne(ctx, crawlData)
 		if err != nil {
 			log.Printf("[%s] Failed to save URL: %s Error: %v", timestamp.Format("2006-01-02 15:04:05"), url, err)
+		}
+		err = w.vectorRepo.InsertOne(ctx, "Document", &repository.CrawlVectorDoc{
+			URL:       url,
+			Content:   content,
+			CrawledAt: timestamp,
+		})
+		if err != nil {
+			log.Print("err insert vector: " + err.Error())
 		}
 	})
 

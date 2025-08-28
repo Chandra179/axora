@@ -7,11 +7,11 @@ import (
 )
 
 type Config struct {
-	MongoUsername string
-	MongoPassword string
-	MongoDatabase string
-	MongoPort     int
-	MongoURL      string
+	MongoUsername     string
+	MongoPassword     string
+	MongoDatabaseName string
+	MongoPort         int
+	MongoURL          string
 
 	MongoExpressUsername string
 	MongoExpressPassword string
@@ -42,11 +42,11 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		MongoUsername: getEnv("MONGO_USERNAME"),
-		MongoPassword: getEnv("MONGO_PASSWORD"),
-		MongoDatabase: getEnv("MONGO_DATABASE"),
-		MongoPort:     mongoPort,
-		MongoURL:      getEnv("MONGO_URL"),
+		MongoUsername:     getEnv("MONGO_USERNAME"),
+		MongoPassword:     getEnv("MONGO_PASSWORD"),
+		MongoDatabaseName: getEnv("MONGO_DATABASE"),
+		MongoPort:         mongoPort,
+		MongoURL:          getEnv("MONGO_URL"),
 
 		MongoExpressUsername: getEnv("MONGO_EXPRESS_USERNAME"),
 		MongoExpressPassword: getEnv("MONGO_EXPRESS_PASSWORD"),

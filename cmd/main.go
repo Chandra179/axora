@@ -3,20 +3,15 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
-	"time"
 
 	"axora/client"
 	"axora/config"
 	"axora/crawler"
+	mongodbClient "axora/pkg/mongodb"
+	weaviatedbClient "axora/pkg/weaviatedb"
 	"axora/search"
-	"axora/storage"
-
-	"github.com/weaviate/weaviate-go-client/v5/weaviate"
-	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 func main() {
@@ -26,17 +21,23 @@ func main() {
 	}
 
 	// ==========
-	// DATABASE
+	// MONGO DATABASE
 	// ==========
-	mongo, err := initMongoDB(cfg.MongoURL)
+	mdb, err := mongodbClient.NewClient(cfg.MongoURL, cfg.MongoDatabaseName)
 	if err != nil {
 		log.Fatalf("Failed to initialize MongoDB: %v", err)
 	}
+	crawlCollection := mongodbClient.NewCrawlCollection(mdb)
 
-	db := mongo.Database(cfg.MongoDatabase)
-	crawlCollection := storage.NewCrawlCollection(db)
-
-	initWeavite(cfg.WeaviateURL)
+	// ==========
+	// WEAVIATE DATABASE
+	// ==========
+	wdb, err := weaviatedbClient.NewClient(cfg.WeaviateURL)
+	if err != nil {
+		log.Fatalf("Failed to initialize Weaviate: %v", err)
+	}
+	crawlVector := weaviatedbClient.NewCrawlVectorClient(wdb)
+	crawlVector.CreateCrawlSchema(context.Background(), "Document")
 
 	// ==========
 	// EXTRACTOR
@@ -59,7 +60,7 @@ func main() {
 	// ==========
 	// Crawler worker
 	// ==========
-	worker := crawler.NewWorker(crawlCollection, extractor)
+	worker := crawler.NewWorker(crawlCollection, crawlVector, extractor)
 
 	// ==========
 	// Search
@@ -72,42 +73,6 @@ func main() {
 	http.Handle("/search", Crawl(serp, worker, teiClient, semanticRelevance))
 
 	log.Fatal(http.ListenAndServe(":8080", nil))
-}
-
-func initWeavite(url string) {
-	cfg := weaviate.Config{
-		Host:   url,
-		Scheme: "http",
-	}
-
-	client, err := weaviate.NewClient(cfg)
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	// Check the connection
-	ready, err := client.Misc().ReadyChecker().Do(context.Background())
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("%v", ready)
-}
-
-func initMongoDB(url string) (*mongo.Client, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	clientOptions := options.Client().ApplyURI(url)
-	client, err := mongo.Connect(ctx, clientOptions)
-	if err != nil {
-		return nil, fmt.Errorf("failed to connect to MongoDB: %w", err)
-	}
-
-	if err = client.Ping(ctx, nil); err != nil {
-		return nil, fmt.Errorf("failed to ping MongoDB: %w", err)
-	}
-
-	return client, nil
 }
 
 func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
