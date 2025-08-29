@@ -1,25 +1,43 @@
+version: '3.5'
+
 services:
-  axora-tei-model:
-    image: cr.weaviate.io/semitechnologies/transformers-inference:sentence-transformers-all-MiniLM-L6-v2
-    container_name: axora-tei-model
+  axora-crawler:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: axora-crawler
     restart: unless-stopped
     environment:
-      - ENABLE_CUDA=0  # Set to 1 if you have GPU support
+      MONGO_URL: ${MONGO_URL}
+      MONGO_DATABASE: ${MONGO_DATABASE}
+      MONGO_USERNAME: ${MONGO_USERNAME}
+      MONGO_PASSWORD: ${MONGO_PASSWORD}
+      MONGO_PORT: ${MONGO_PORT}
+      MONGO_EXPRESS_USERNAME: ${MONGO_EXPRESS_USERNAME}
+      MONGO_EXPRESS_PASSWORD: ${MONGO_EXPRESS_PASSWORD}
+      MONGO_EXPRESS_PORT: ${MONGO_EXPRESS_PORT}
+      APP_PORT: ${APP_PORT}
+      SERP_API_KEY: ${SERP_API_KEY}
+      TEI_MODEL_CLIENT_URL: ${TEI_MODEL_CLIENT_URL}
+      MILVUS_PORT: ${MILVUS_PORT}
+      MILVUS_HOST: ${MILVUS_HOST}
+      DOCKER_BUILDKIT: 1
     ports:
-      - "8080:8080"  # Weaviate transformers-inference uses port 8080 internally
-    volumes:
-      - axora-model-cache:/data
+      - "${APP_PORT}:8000"
+    networks:
+      - axora-network
+    depends_on:
+      axora-mongodb:
+        condition: service_healthy
     deploy:
       resources:
         limits:
-          cpus: '2.0'
-          memory: 2G
+          cpus: '1.5'
+          memory: 1.5G
         reservations:
           cpus: '0.5'
           memory: 512M
-    networks:
-      - axora-network
-
+          
   axora-mongodb:
     image: mongo:latest
     container_name: axora-mongodb
@@ -64,103 +82,71 @@ services:
     networks:
       - axora-network
 
-  axora-crawler:
-    build: 
-      context: .
-      dockerfile: Dockerfile
-    container_name: axora-crawler
-    restart: unless-stopped
+  etcd:
+    container_name: axora-etcd
+    image: quay.io/coreos/etcd:v3.5.18
     environment:
-      MONGO_URL: ${MONGO_URL}
-      MONGO_DATABASE: ${MONGO_DATABASE}
-      MONGO_USERNAME: ${MONGO_USERNAME}
-      MONGO_PASSWORD: ${MONGO_PASSWORD}
-      MONGO_PORT: ${MONGO_PORT}
-      MONGO_EXPRESS_USERNAME: ${MONGO_EXPRESS_USERNAME}
-      MONGO_EXPRESS_PASSWORD: ${MONGO_EXPRESS_PASSWORD}
-      MONGO_EXPRESS_PORT: ${MONGO_EXPRESS_PORT}
-      APP_PORT: ${APP_PORT}
-      SERP_API_KEY: ${SERP_API_KEY}
-      TEI_MODEL_CLIENT_URL: ${TEI_MODEL_CLIENT_URL}
-      WEAVIATE_URL: ${WEAVIATE_URL}
-      DOCKER_BUILDKIT: 1
-    ports:
-      - "${APP_PORT}:8000"
-    networks:
-      - axora-network
-    depends_on:
-      axora-mongodb:
-        condition: service_healthy
-      axora-weaviate:
-        condition: service_healthy
-    deploy:
-      resources:
-        limits:
-          cpus: '1.5'
-          memory: 1.5G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
-
-  axora-weaviate:
-    command:
-      - --host
-      - 0.0.0.0
-      - --port
-      - '8082'
-      - --scheme
-      - http
-    image: cr.weaviate.io/semitechnologies/weaviate:1.30.0
-    container_name: axora-weaviate
-    restart: unless-stopped
-    ports:
-      - 8082:8082
-      - 50051:50051
-    environment:
-      QUERY_DEFAULTS_LIMIT: 25
-      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
-      PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
-      DEFAULT_VECTORIZER_MODULE: 'text2vec-transformers'
-      ENABLE_MODULES: 'text2vec-transformers'
-      TRANSFORMERS_INFERENCE_API: 'http://axora-tei-model:8080'
-      CLUSTER_HOSTNAME: 'node1'
+      - ETCD_AUTO_COMPACTION_MODE=revision
+      - ETCD_AUTO_COMPACTION_RETENTION=1000
+      - ETCD_QUOTA_BACKEND_BYTES=4294967296
+      - ETCD_SNAPSHOT_COUNT=50000
     volumes:
-      - axora-weaviate-data:/var/lib/weaviate
-    networks:
-      - axora-network
-    deploy:
-      resources:
-        limits:
-          cpus: '2.0'
-          memory: 3G
-        reservations:
-          cpus: '1.0'
-          memory: 2G
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/etcd:/etcd
+    command: etcd -advertise-client-urls=http://etcd:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
     healthcheck:
-      test: ["CMD", "nc", "-z", "localhost", "8082"]
-      interval: 20s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
-
-  axora-weaviate-console:
-    image: semitechnologies/weaviate-console:latest
-    container_name: axora-weaviate-console
-    ports:
-      - "8083:80"
-    deploy:
-      resources:
-        limits:
-          cpus: '1.5'
-          memory: 1.5G
-        reservations:
-          cpus: '0.5'
-          memory: 512M
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
     networks:
       - axora-network
+
+  minio:
+    container_name: axora-minio
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    ports:
+      - "9001:9001"
+      - "9000:9000"
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/minio:/minio_data
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - axora-network
+
+  standalone:
+    container_name: axora-milvus-standalone
+    image: milvusdb/milvus:v2.6.0
+    command: ["milvus", "run", "standalone"]
+    security_opt:
+    - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MQ_TYPE: woodpecker
+    volumes:
+      - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/milvus:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      start_period: 90s
+      timeout: 20s
+      retries: 3
+    ports:
+      - "19530:19530"
+      - "9091:9091"
     depends_on:
-      axora-weaviate:
-        condition: service_healthy
+      - "etcd"
+      - "minio"
+    networks:
+      - axora-network
 
 volumes:
   axora-weaviate-data:

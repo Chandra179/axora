@@ -22,7 +22,8 @@ type Config struct {
 	SerpApiKey        string
 	TEIModelClientURL string
 
-	WeaviateURL string
+	MilvusHost string
+	MilvusPort string
 }
 
 func Load() (*Config, error) {
@@ -57,7 +58,8 @@ func Load() (*Config, error) {
 		SerpApiKey:        getEnv("SERP_API_KEY"),
 		TEIModelClientURL: getEnv("TEI_MODEL_CLIENT_URL"),
 
-		WeaviateURL: getEnv("WEAVIATE_URL"),
+		MilvusPort: getEnv("MILVUS_PORT"),
+		MilvusHost: getEnv("MILVUS_HOST"),
 	}, nil
 }
 

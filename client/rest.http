@@ -1,12 +1,7 @@
-# POST http://localhost:8080/search
-# Content-Type: application/json
+POST http://localhost:8000/search
+Content-Type: application/json
 
-# {
-#   "query": "neural networks, deep learning, machine learning, ai agents, llm, transfer learning, nlp, fine-tuning, multimodal AI, natural language processing, gradient descent, backpropagation, self attention, transformers",
-#   "crawl_type": "keywords"
-# }
-
-
-GET http://localhost:8080/.well-known/ready
-
-# GET http://localhost:8082/v1/.well-known/ready
+{
+  "query": "neural networks, deep learning, machine learning, ai agents, llm, transfer learning, nlp, fine-tuning, multimodal AI, natural language processing, gradient descent, backpropagation, self attention, transformers",
+  "crawl_type": "keywords"
+}

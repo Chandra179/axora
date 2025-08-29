@@ -3,18 +3,20 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
 
 	"axora/client"
 	"axora/config"
 	"axora/crawler"
+	milvusdbClient "axora/pkg/milvusb"
 	mongodbClient "axora/pkg/mongodb"
-	weaviatedbClient "axora/pkg/weaviatedb"
 	"axora/search"
 )
 
 func main() {
+	fmt.Println("Start")
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
@@ -30,14 +32,14 @@ func main() {
 	crawlCollection := mongodbClient.NewCrawlCollection(mdb)
 
 	// ==========
-	// WEAVIATE DATABASE
+	// MILVUS DATABASE
 	// ==========
-	wdb, err := weaviatedbClient.NewClient(cfg.WeaviateURL)
+	wdb, err := milvusdbClient.NewClient(cfg.MilvusPort, cfg.MilvusPort)
 	if err != nil {
 		log.Fatalf("Failed to initialize Weaviate: %v", err)
 	}
-	crawlVector := weaviatedbClient.NewCrawlClient(wdb)
-	crawlVector.CreateCrawlSchema(context.Background(), "Document")
+	crawlVector := milvusdbClient.NewCrawlClient(wdb)
+	crawlVector.CreateCrawlCollection(context.Background())
 
 	// ==========
 	// EXTRACTOR
@@ -72,7 +74,8 @@ func main() {
 	// ==========
 	http.Handle("/search", Crawl(serp, worker, teiClient, semanticRelevance))
 
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	fmt.Println("Running")
+	log.Fatal(http.ListenAndServe(":8000", nil))
 }
 
 func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,

@@ -108,7 +108,7 @@ func (w *Worker) Crawl(ctx context.Context, relevanceFilter RelevanceFilter, url
 		if err != nil {
 			log.Printf("[%s] Failed to save URL: %s Error: %v", timestamp.Format("2006-01-02 15:04:05"), url, err)
 		}
-		err = w.vectorRepo.InsertOne(ctx, "Document", &repository.CrawlVectorDoc{
+		err = w.vectorRepo.InsertOne(ctx, &repository.CrawlVectorDoc{
 			URL:       url,
 			Content:   content,
 			CrawledAt: timestamp,
