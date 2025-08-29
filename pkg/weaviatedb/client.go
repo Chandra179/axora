@@ -20,7 +20,7 @@ func NewClient(url string) (*weaviate.Client, error) {
 
 	ready, err := client.Misc().ReadyChecker().Do(context.Background())
 	if err != nil {
-		return nil, errors.New("weaviate: error checking client ready")
+		return nil, errors.New("weaviate: error checking client ready: " + err.Error())
 	}
 	if !ready {
 		return nil, errors.New("weaviate: client not ready")

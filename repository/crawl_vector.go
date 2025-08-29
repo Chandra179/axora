@@ -10,9 +10,7 @@ type CrawlVectorRepo interface {
 }
 
 type CrawlVectorDoc struct {
-	ID         string    `json:"id,omitempty"`
-	URL        string    `json:"url"`
-	Content    string    `json:"content"`
-	CrawledAt  time.Time `json:"crawledAt"`
-	StatusCode int       `json:"statusCode"`
+	URL       string    `json:"url"`
+	Content   string    `json:"content"`
+	CrawledAt time.Time `json:"crawledAt"`
 }

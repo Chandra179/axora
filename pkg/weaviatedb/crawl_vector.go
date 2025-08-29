@@ -11,6 +11,7 @@ import (
 
 	"github.com/weaviate/weaviate-go-client/v5/weaviate"
 	"github.com/weaviate/weaviate/entities/models"
+	"github.com/weaviate/weaviate/entities/schema"
 )
 
 type CrawlClient struct {
@@ -31,22 +32,28 @@ func (vc *CrawlClient) CreateCrawlSchema(ctx context.Context, className string) 
 	}
 
 	classObj := &models.Class{
-		Class: className,
+		Class:      className,
+		Vectorizer: "text2vec-ollama",
+		ModuleConfig: map[string]interface{}{
+			"text2vec-ollama": map[string]interface{}{ // Configure the Ollama embedding integration
+				"apiEndpoint": "http://host.docker.internal:11434", // Allow Weaviate from within a Docker container to contact your Ollama instance
+				"model":       "nomic-embed-text",                  // The model to use
+			},
+		},
 		Properties: []*models.Property{
 			{
-				DataType: []string{"text"},
+				DataType: schema.DataTypeText.PropString(),
 				Name:     "url",
 			},
 			{
-				DataType: []string{"text"},
+				DataType: schema.DataTypeText.PropString(),
 				Name:     "content",
 			},
 			{
-				DataType: []string{"date"},
+				DataType: schema.DataTypeText.PropString(),
 				Name:     "crawledAt",
 			},
 		},
-		Vectorizer: "text2vec-huggingface",
 	}
 
 	return vc.client.Schema().ClassCreator().
@@ -58,10 +65,9 @@ func (vc *CrawlClient) InsertOne(ctx context.Context, className string, doc *rep
 	cleanedContent := vc.cleanHTML(doc.Content)
 
 	dataSchema := map[string]interface{}{
-		"url":        doc.URL,
-		"content":    cleanedContent,
-		"crawledAt":  doc.CrawledAt.Format(time.RFC3339),
-		"statusCode": doc.StatusCode,
+		"url":       doc.URL,
+		"content":   cleanedContent,
+		"crawledAt": doc.CrawledAt.Format(time.RFC3339),
 	}
 
 	// This creates new objects each time (but that's correct/required)

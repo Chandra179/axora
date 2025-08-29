@@ -36,7 +36,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to initialize Weaviate: %v", err)
 	}
-	crawlVector := weaviatedbClient.NewCrawlVectorClient(wdb)
+	crawlVector := weaviatedbClient.NewCrawlClient(wdb)
 	crawlVector.CreateCrawlSchema(context.Background(), "Document")
 
 	// ==========

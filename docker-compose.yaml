@@ -1,42 +1,14 @@
 services:
-  # pos-service:
-  #   image: jgontrum/spacyapi:en_v2
-  #   container_name: axora-pos-service
-  #   ports:
-  #     - "8082:80"
-  #   deploy:
-  #     resources:
-  #       limits:
-  #         cpus: '2.0'
-  #         memory: 2G
-  #       reservations:
-  #         cpus: '0.5'
-  #         memory: 512M
-  #   healthcheck:
-  #     interval: 30s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 60s
-
   axora-tei-model:
-    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    image: cr.weaviate.io/semitechnologies/transformers-inference:sentence-transformers-all-MiniLM-L6-v2
     container_name: axora-tei-model
     restart: unless-stopped
     environment:
-      - MODEL_ID=sentence-transformers/all-MiniLM-L6-v2
-      - PORT=80
-      - MAX_CONCURRENT_REQUESTS=4
-      - MAX_BATCH_TOKENS=1024
-      - MAX_BATCH_REQUESTS=8
-      - NUM_SHARD=1
-      - CUDA_VISIBLE_DEVICES=""
-      - HUGGING_FACE_HUB_TOKEN=""
+      - ENABLE_CUDA=0  # Set to 1 if you have GPU support
     ports:
-      - "8000:80"
+      - "8080:8080"  # Weaviate transformers-inference uses port 8080 internally
     volumes:
       - axora-model-cache:/data
-    networks:
-      - axora-network
     deploy:
       resources:
         limits:
@@ -45,12 +17,8 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
+    networks:
+      - axora-network
 
   axora-mongodb:
     image: mongo:latest
@@ -93,9 +61,6 @@ services:
       ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD}
     ports:
       - "${MONGO_EXPRESS_PORT}:8081"
-    depends_on:
-      axora-mongodb:
-        condition: service_healthy
     networks:
       - axora-network
 
@@ -103,8 +68,6 @@ services:
     build: 
       context: .
       dockerfile: Dockerfile
-      cache_from:
-        - axora-crawler:latest
     container_name: axora-crawler
     restart: unless-stopped
     environment:
@@ -122,14 +85,14 @@ services:
       WEAVIATE_URL: ${WEAVIATE_URL}
       DOCKER_BUILDKIT: 1
     ports:
-      - "${APP_PORT}:8080"
-    depends_on:
-      axora-tei-model:
-        condition: service_healthy
-      axora-mongodb:
-        condition: service_healthy
+      - "${APP_PORT}:8000"
     networks:
       - axora-network
+    depends_on:
+      axora-mongodb:
+        condition: service_healthy
+      axora-weaviate:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -141,49 +104,50 @@ services:
 
   axora-weaviate:
     command:
-    - --host
-    - 0.0.0.0
-    - --port
-    - '8082'
-    - --scheme
-    - http
-    image: cr.weaviate.io/semitechnologies/weaviate:latest
+      - --host
+      - 0.0.0.0
+      - --port
+      - '8082'
+      - --scheme
+      - http
+    image: cr.weaviate.io/semitechnologies/weaviate:1.30.0
     container_name: axora-weaviate
+    restart: unless-stopped
     ports:
-    - "8082:8082"
-    restart: on-failure:0
+      - 8082:8082
+      - 50051:50051
     environment:
       QUERY_DEFAULTS_LIMIT: 25
       AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: 'true'
       PERSISTENCE_DATA_PATH: '/var/lib/weaviate'
-      ENABLE_API_BASED_MODULES: 'true'
-      ENABLE_MODULES: 'text2vec-huggingface'
-      HUGGINGFACE_EMBEDDINGS_URL: 'http://axora-tei-model:80' 
+      DEFAULT_VECTORIZER_MODULE: 'text2vec-transformers'
+      ENABLE_MODULES: 'text2vec-transformers'
+      TRANSFORMERS_INFERENCE_API: 'http://axora-tei-model:8080'
       CLUSTER_HOSTNAME: 'node1'
-    networks:
-      - axora-network
     volumes:
       - axora-weaviate-data:/var/lib/weaviate
+    networks:
+      - axora-network
     deploy:
-      resources:  
+      resources:
         limits:
-          cpus: '1.5'
-          memory: 1.5G
+          cpus: '2.0'
+          memory: 3G
         reservations:
-          cpus: '0.5'
-          memory: 512M
+          cpus: '1.0'
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "8082"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   axora-weaviate-console:
     image: semitechnologies/weaviate-console:latest
     container_name: axora-weaviate-console
     ports:
       - "8083:80"
-    restart: on-failure:0
-    environment:
-      WEAVIATE_URL: http://axora-weaviate:8082
-      DEFAULTS__NO_AUTH: "true"
-    networks:
-      - axora-network
     deploy:
       resources:
         limits:
@@ -192,6 +156,11 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
+    networks:
+      - axora-network
+    depends_on:
+      axora-weaviate:
+        condition: service_healthy
 
 volumes:
   axora-weaviate-data:

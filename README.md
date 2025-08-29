@@ -46,7 +46,7 @@ start -> level1 -> level2 -> level3 -> back_to_level2 -> level3 -> back_to_level
 - Depth limit: Prevents going too deep
 - Loop detection: Prevents the level2 ↔ level3 ping-pong
 
-## Collections
+## Collection
 ```json
 {
   "_id" : "68aebe024b1dc2e2de726227",
@@ -56,7 +56,7 @@ start -> level1 -> level2 -> level3 -> back_to_level2 -> level3 -> back_to_level
 }
 ```
 
-## Vector (pinecone)
+## Vector
 - Using semantic chunking embeddings (500–1000 tokens, ~100 overlap)
 - Vector search finds semantically similar chunks, but you often want filters:
   ```

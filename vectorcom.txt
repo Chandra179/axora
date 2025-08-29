@@ -1,0 +1,7 @@
+{
+  Get {
+    Document(limit: 5) {
+      url
+      content
+  }
+}
