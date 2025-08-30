@@ -7,11 +7,10 @@ import (
 	"log"
 	"net/http"
 
-	"axora/client"
 	"axora/config"
 	"axora/crawler"
+	"axora/embedding"
 	milvusdbClient "axora/pkg/milvusb"
-	mongodbClient "axora/pkg/mongodb"
 	"axora/search"
 )
 
@@ -23,23 +22,14 @@ func main() {
 	}
 
 	// ==========
-	// MONGO DATABASE
-	// ==========
-	mdb, err := mongodbClient.NewClient(cfg.MongoURL, cfg.MongoDatabaseName)
-	if err != nil {
-		log.Fatalf("Failed to initialize MongoDB: %v", err)
-	}
-	crawlCollection := mongodbClient.NewCrawlCollection(mdb)
-
-	// ==========
 	// MILVUS DATABASE
 	// ==========
 	wdb, err := milvusdbClient.NewClient(cfg.MilvusPort, cfg.MilvusPort)
 	if err != nil {
 		log.Fatalf("Failed to initialize Weaviate: %v", err)
 	}
-	crawlVector := milvusdbClient.NewCrawlClient(wdb)
-	crawlVector.CreateCrawlCollection(context.Background())
+	crawlVectorCollection := milvusdbClient.NewCrawlClient(wdb)
+	crawlVectorCollection.CreateCrawlCollection(context.Background())
 
 	// ==========
 	// EXTRACTOR
@@ -47,14 +37,14 @@ func main() {
 	extractor := crawler.NewContentExtractor()
 
 	// ==========
-	// TEI MODEL CLIENT
+	// MinilmL6V2
 	// ==========
-	teiClient := client.NewTEIClient(cfg.TEIModelClientURL)
+	minilmL6V2 := embedding.NewAllMinilmL6V2(cfg.AllMinilmL6V2URL)
 
 	// ==========
 	// Relevance filter
 	// ==========
-	semanticRelevance, err := crawler.NewSemanticRelevanceFilter(teiClient, 0.61)
+	semanticRelevance, err := crawler.NewSemanticRelevanceFilter(minilmL6V2, 0.61)
 	if err != nil {
 		log.Fatalf("Failed to initialize semantic relevance filter: %v", err)
 	}
@@ -62,7 +52,7 @@ func main() {
 	// ==========
 	// Crawler worker
 	// ==========
-	worker := crawler.NewWorker(crawlCollection, crawlVector, extractor)
+	worker := crawler.NewWorker(crawlVectorCollection, minilmL6V2, extractor)
 
 	// ==========
 	// Search
@@ -72,14 +62,14 @@ func main() {
 	// ==========
 	// HTTP
 	// ==========
-	http.Handle("/search", Crawl(serp, worker, teiClient, semanticRelevance))
+	http.Handle("/search", Crawl(serp, worker, minilmL6V2, semanticRelevance))
 
 	fmt.Println("Running")
 	log.Fatal(http.ListenAndServe(":8000", nil))
 }
 
 func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
-	teiClient *client.TEIClient, sem *crawler.SemanticRelevanceFilter) http.HandlerFunc {
+	embed embedding.Client, sem *crawler.SemanticRelevanceFilter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		type RequestBody struct {
 			Query     string `json:"query"`
@@ -116,7 +106,7 @@ func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
 		var filter crawler.RelevanceFilter
 		if body.CrawlType == "semantic" {
 			ctx := context.Background()
-			embeddings, err := teiClient.GetEmbeddings(ctx, []string{body.Query})
+			embeddings, err := embed.GetEmbeddings(ctx, []string{body.Query})
 			if err != nil {
 				http.Error(w, "error tei model", http.StatusInternalServerError)
 			}

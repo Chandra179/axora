@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"axora/embedding"
 	"axora/repository"
 
 	"github.com/gocolly/colly/v2"
@@ -14,14 +15,14 @@ import (
 
 type Worker struct {
 	collector       *colly.Collector
-	crawlRepo       repository.CrawlCollectionRepo
-	vectorRepo      repository.CrawlVectorRepo
+	crawlVectorRepo repository.CrawlVectorRepo
 	extractor       *ContentExtractor
 	relevanceFilter RelevanceFilter
+	embeddingClient embedding.Client
 	loopDetector    *LoopDetector
 }
 
-func NewWorker(crawlRepo repository.CrawlCollectionRepo, vectorRepo repository.CrawlVectorRepo, extractor *ContentExtractor) *Worker {
+func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, embeddingClient embedding.Client, extractor *ContentExtractor) *Worker {
 	c := colly.NewCollector(
 		colly.UserAgent("Axora-Crawler/1.0"),
 		colly.MaxDepth(10),
@@ -36,11 +37,11 @@ func NewWorker(crawlRepo repository.CrawlCollectionRepo, vectorRepo repository.C
 	loopDetector := NewLoopDetector(3)
 
 	worker := &Worker{
-		collector:    c,
-		crawlRepo:    crawlRepo,
-		vectorRepo:   vectorRepo,
-		extractor:    extractor,
-		loopDetector: loopDetector,
+		collector:       c,
+		crawlVectorRepo: crawlVectorRepo,
+		extractor:       extractor,
+		loopDetector:    loopDetector,
+		embeddingClient: embeddingClient,
 	}
 
 	return worker
@@ -49,7 +50,7 @@ func NewWorker(crawlRepo repository.CrawlCollectionRepo, vectorRepo repository.C
 func isVisitableURL(str string) bool {
 	u, err := url.ParseRequestURI(str)
 	if err != nil {
-		return false // not even a valid URI
+		return false
 	}
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return false
@@ -97,21 +98,11 @@ func (w *Worker) Crawl(ctx context.Context, relevanceFilter RelevanceFilter, url
 		if !isRelevant {
 			return
 		}
-
-		crawlData := &repository.CrawlCollectionDoc{
-			URL:        url,
-			Content:    content,
-			Statuscode: r.StatusCode,
-			CrawledAt:  timestamp,
-		}
-		err = w.crawlRepo.InsertOne(ctx, crawlData)
-		if err != nil {
-			log.Printf("[%s] Failed to save URL: %s Error: %v", timestamp.Format("2006-01-02 15:04:05"), url, err)
-		}
-		err = w.vectorRepo.InsertOne(ctx, &repository.CrawlVectorDoc{
+		err = w.crawlVectorRepo.InsertOne(ctx, &repository.CrawlVectorDoc{
 			URL:       url,
 			Content:   content,
 			CrawledAt: timestamp,
+			// ContentEmbedding: ,
 		})
 		if err != nil {
 			log.Print("err insert vector: " + err.Error())

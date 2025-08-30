@@ -1,6 +1,40 @@
 version: '3.5'
 
 services:
+  axora-minilml6v2:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    container_name: axora-minilml6v2
+    restart: unless-stopped
+    environment:
+      - MODEL_ID=sentence-transformers/all-MiniLM-L6-v2
+      - PORT=80
+      - MAX_CONCURRENT_REQUESTS=4
+      - MAX_BATCH_TOKENS=1024
+      - MAX_BATCH_REQUESTS=8
+      - NUM_SHARD=1
+      - CUDA_VISIBLE_DEVICES=""
+      - HUGGING_FACE_HUB_TOKEN=""
+    ports:
+      - "8000:80"
+    volumes:
+      - axora-model-cache:/data
+    networks:
+      - axora-network
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   axora-crawler:
     build: 
       context: .
@@ -8,14 +42,6 @@ services:
     container_name: axora-crawler
     restart: unless-stopped
     environment:
-      MONGO_URL: ${MONGO_URL}
-      MONGO_DATABASE: ${MONGO_DATABASE}
-      MONGO_USERNAME: ${MONGO_USERNAME}
-      MONGO_PASSWORD: ${MONGO_PASSWORD}
-      MONGO_PORT: ${MONGO_PORT}
-      MONGO_EXPRESS_USERNAME: ${MONGO_EXPRESS_USERNAME}
-      MONGO_EXPRESS_PASSWORD: ${MONGO_EXPRESS_PASSWORD}
-      MONGO_EXPRESS_PORT: ${MONGO_EXPRESS_PORT}
       APP_PORT: ${APP_PORT}
       SERP_API_KEY: ${SERP_API_KEY}
       TEI_MODEL_CLIENT_URL: ${TEI_MODEL_CLIENT_URL}
@@ -26,9 +52,6 @@ services:
       - "${APP_PORT}:8000"
     networks:
       - axora-network
-    depends_on:
-      axora-mongodb:
-        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -37,50 +60,6 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
-          
-  axora-mongodb:
-    image: mongo:latest
-    container_name: axora-mongodb
-    restart: unless-stopped
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_USERNAME}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
-      MONGO_INITDB_DATABASE: ${MONGO_DATABASE}
-    ports:
-      - "${MONGO_PORT}:27017"
-    volumes:
-      - axora-mongodb-data:/data/db
-    networks:
-      - axora-network
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 1G
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-    healthcheck:
-      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
-      interval: 10s
-      timeout: 10s
-      retries: 5
-      start_period: 40s
-
-  axora-mongo-express:
-    image: mongo-express:latest
-    container_name: axora-mongo-express
-    restart: unless-stopped
-    environment:
-      ME_CONFIG_MONGODB_ADMINUSERNAME: ${MONGO_USERNAME}
-      ME_CONFIG_MONGODB_ADMINPASSWORD: ${MONGO_PASSWORD}
-      ME_CONFIG_MONGODB_URL: ${MONGO_URL}
-      ME_CONFIG_BASICAUTH_USERNAME: ${MONGO_EXPRESS_USERNAME}
-      ME_CONFIG_BASICAUTH_PASSWORD: ${MONGO_EXPRESS_PASSWORD}
-    ports:
-      - "${MONGO_EXPRESS_PORT}:8081"
-    networks:
-      - axora-network
 
   etcd:
     container_name: axora-etcd
@@ -150,7 +129,6 @@ services:
 
 volumes:
   axora-weaviate-data:
-  axora-mongodb-data:
   axora-model-cache:
 
 networks:

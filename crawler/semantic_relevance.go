@@ -1,21 +1,21 @@
 package crawler
 
 import (
-	"axora/client"
+	"axora/embedding"
 	"context"
 	"fmt"
 )
 
 type SemanticRelevanceFilter struct {
-	teiClient      client.TEIHandler
-	QueryEmbedding []float64
-	threshold      float64
+	embeddingClient embedding.Client
+	QueryEmbedding  []float64
+	threshold       float64
 }
 
-func NewSemanticRelevanceFilter(teiClient client.TEIHandler, threshold float64) (*SemanticRelevanceFilter, error) {
+func NewSemanticRelevanceFilter(embeddingClient embedding.Client, threshold float64) (*SemanticRelevanceFilter, error) {
 	return &SemanticRelevanceFilter{
-		teiClient: teiClient,
-		threshold: threshold,
+		embeddingClient: embeddingClient,
+		threshold:       threshold,
 	}, nil
 }
 
@@ -25,13 +25,13 @@ func (s *SemanticRelevanceFilter) IsURLRelevant(content string) (bool, float64, 
 	}
 	ctx := context.Background()
 	tc := truncateText(content, 200)
-	embeddings, err := s.teiClient.GetEmbeddings(ctx, []string{tc})
+	embeddings, err := s.embeddingClient.GetEmbeddings(ctx, []string{tc})
 	if err != nil {
 		return false, 0.0, fmt.Errorf("failed to get content embedding: %w", err)
 	}
 	contentEmbedding := embeddings[0]
 
-	similarity := client.CosineSimilarity(s.QueryEmbedding, contentEmbedding)
+	similarity := embedding.CosineSimilarity(s.QueryEmbedding, contentEmbedding)
 	isRelevant := similarity >= s.threshold
 
 	return isRelevant, similarity, nil
