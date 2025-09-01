@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strconv"
 
 	"axora/config"
 	"axora/crawler"
 	"axora/embedding"
-	milvusdbClient "axora/pkg/milvusb"
+	qdrantClient "axora/pkg/qdrantdb"
 	"axora/search"
 )
 
@@ -22,14 +23,16 @@ func main() {
 	}
 
 	// ==========
-	// MILVUS DATABASE
+	// QDRANT DATABASE
 	// ==========
-	wdb, err := milvusdbClient.NewClient(cfg.MilvusPort, cfg.MilvusPort)
+	qdb, err := qdrantClient.NewClient(cfg.QdrantHost, cfg.QdrantPort)
 	if err != nil {
 		log.Fatalf("Failed to initialize Weaviate: %v", err)
 	}
-	crawlVectorCollection := milvusdbClient.NewCrawlClient(wdb)
-	crawlVectorCollection.CreateCrawlCollection(context.Background())
+	err = qdb.CreateCrawlCollection(context.Background())
+	if err != nil {
+		log.Fatalf("err: %v", err)
+	}
 
 	// ==========
 	// EXTRACTOR
@@ -52,7 +55,7 @@ func main() {
 	// ==========
 	// Crawler worker
 	// ==========
-	worker := crawler.NewWorker(crawlVectorCollection, minilmL6V2, extractor)
+	worker := crawler.NewWorker(qdb, minilmL6V2, extractor)
 
 	// ==========
 	// Search
@@ -65,7 +68,7 @@ func main() {
 	http.Handle("/search", Crawl(serp, worker, minilmL6V2, semanticRelevance))
 
 	fmt.Println("Running")
-	log.Fatal(http.ListenAndServe(":8000", nil))
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil))
 }
 
 func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,

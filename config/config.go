@@ -12,12 +12,17 @@ type Config struct {
 	SerpApiKey       string
 	AllMinilmL6V2URL string
 
-	MilvusHost string
-	MilvusPort string
+	QdrantHost string
+	QdrantPort int
 }
 
 func Load() (*Config, error) {
 	appPort, err := strconv.Atoi(getEnv("APP_PORT"))
+	if err != nil {
+		return nil, err
+	}
+
+	qdrantPort, err := strconv.Atoi(getEnv("QDRANT_GRPC_PORT"))
 	if err != nil {
 		return nil, err
 	}
@@ -28,8 +33,8 @@ func Load() (*Config, error) {
 		SerpApiKey:       getEnv("SERP_API_KEY"),
 		AllMinilmL6V2URL: getEnv("MINILML6V2_URL"),
 
-		MilvusPort: getEnv("MILVUS_PORT"),
-		MilvusHost: getEnv("MILVUS_HOST"),
+		QdrantPort: qdrantPort,
+		QdrantHost: getEnv("QDRANT_HOST"),
 	}, nil
 }
 

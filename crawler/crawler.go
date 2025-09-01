@@ -98,11 +98,16 @@ func (w *Worker) Crawl(ctx context.Context, relevanceFilter RelevanceFilter, url
 		if !isRelevant {
 			return
 		}
+		contentEmbed, err := w.embeddingClient.GetEmbeddings(ctx, []string{content})
+		if err != nil {
+			log.Printf("Embed process failed: %s Error", err)
+			return
+		}
 		err = w.crawlVectorRepo.InsertOne(ctx, &repository.CrawlVectorDoc{
-			URL:       url,
-			Content:   content,
-			CrawledAt: timestamp,
-			// ContentEmbedding: ,
+			URL:              url,
+			Content:          content,
+			CrawledAt:        timestamp,
+			ContentEmbedding: contentEmbed,
 		})
 		if err != nil {
 			log.Print("err insert vector: " + err.Error())

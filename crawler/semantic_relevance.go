@@ -8,18 +8,18 @@ import (
 
 type SemanticRelevanceFilter struct {
 	embeddingClient embedding.Client
-	QueryEmbedding  []float64
-	threshold       float64
+	QueryEmbedding  []float32
+	threshold       float32
 }
 
-func NewSemanticRelevanceFilter(embeddingClient embedding.Client, threshold float64) (*SemanticRelevanceFilter, error) {
+func NewSemanticRelevanceFilter(embeddingClient embedding.Client, threshold float32) (*SemanticRelevanceFilter, error) {
 	return &SemanticRelevanceFilter{
 		embeddingClient: embeddingClient,
 		threshold:       threshold,
 	}, nil
 }
 
-func (s *SemanticRelevanceFilter) IsURLRelevant(content string) (bool, float64, error) {
+func (s *SemanticRelevanceFilter) IsURLRelevant(content string) (bool, float32, error) {
 	if content == "" {
 		return false, 0.0, nil
 	}

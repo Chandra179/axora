@@ -36,7 +36,7 @@ func NewKeywordRelevanceFilter(query string) (*KeywordRelevanceFilter, error) {
 
 // IsURLRelevant checks if at least one keyword/phrase is in the content.
 // Returns true if at least one keyword matches, along with a score (fraction of keywords found).
-func (f *KeywordRelevanceFilter) IsURLRelevant(content string) (bool, float64, error) {
+func (f *KeywordRelevanceFilter) IsURLRelevant(content string) (bool, float32, error) {
 	if content == "" {
 		return false, 0.0, nil
 	}
@@ -55,7 +55,7 @@ func (f *KeywordRelevanceFilter) IsURLRelevant(content string) (bool, float64, e
 	}
 
 	// Score: fraction of keywords found
-	score := float64(len(found)) / float64(len(f.keywords))
+	score := float32(len(found)) / float32(len(f.keywords))
 
 	return true, score, nil
 }

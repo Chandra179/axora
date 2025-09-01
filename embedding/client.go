@@ -6,18 +6,18 @@ type EmbeddingRequest struct {
 	Inputs []string `json:"inputs"`
 }
 
-type EmbeddingResponse [][]float64
+type EmbeddingResponse [][]float32
 
 type Client interface {
-	GetEmbeddings(ctx context.Context, texts []string) ([][]float64, error)
+	GetEmbeddings(ctx context.Context, texts []string) ([][]float32, error)
 }
 
-func CosineSimilarity(a, b []float64) float64 {
+func CosineSimilarity(a, b []float32) float32 {
 	if len(a) != len(b) {
 		return 0
 	}
 
-	var dotProduct, normA, normB float64
+	var dotProduct, normA, normB float32
 	for i := 0; i < len(a); i++ {
 		dotProduct += a[i] * b[i]
 		normA += a[i] * a[i]
@@ -31,12 +31,12 @@ func CosineSimilarity(a, b []float64) float64 {
 	return dotProduct / (sqrt(normA) * sqrt(normB))
 }
 
-func sqrt(x float64) float64 {
+func sqrt(x float32) float32 {
 	if x < 0 {
 		return 0
 	}
 
-	z := 1.0
+	z := float32(1.0)
 	for i := 0; i < 10; i++ {
 		z -= (z*z - x) / (2 * z)
 	}

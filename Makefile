@@ -9,3 +9,6 @@ go:
 
 nocache:
 	DOCKER_BUILDKIT=1 docker compose build --no-cache axora-crawler
+
+debug:
+	docker compose -f docker-compose.yaml up --build
