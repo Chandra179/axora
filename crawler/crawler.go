@@ -8,7 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"axora/embedding"
+	"axora/pkg/embedding"
+	"axora/relevance"
 	"axora/repository"
 
 	"github.com/gocolly/colly/v2"
@@ -19,7 +20,7 @@ type Worker struct {
 	collector       *colly.Collector
 	crawlVectorRepo repository.CrawlVectorRepo
 	extractor       *ContentExtractor
-	relevanceFilter RelevanceFilter
+	relevanceFilter relevance.RelevanceFilterClient
 	embeddingClient embedding.Client
 	loopDetector    *LoopDetector
 }
@@ -63,7 +64,7 @@ func isVisitableURL(str string) bool {
 	return true
 }
 
-func (w *Worker) Crawl(ctx context.Context, relevanceFilter RelevanceFilter, urls []string) {
+func (w *Worker) Crawl(ctx context.Context, relevanceFilter relevance.RelevanceFilterClient, urls []string) {
 	// Configured on runtime
 	w.relevanceFilter = relevanceFilter
 

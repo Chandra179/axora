@@ -1,7 +1,7 @@
-package crawler
+package relevance
 
 import (
-	"axora/embedding"
+	"axora/pkg/embedding"
 	"context"
 	"fmt"
 )

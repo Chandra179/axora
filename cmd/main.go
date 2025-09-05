@@ -10,8 +10,9 @@ import (
 
 	"axora/config"
 	"axora/crawler"
-	"axora/embedding"
+	"axora/pkg/embedding"
 	qdrantClient "axora/pkg/qdrantdb"
+	"axora/relevance"
 	"axora/search"
 )
 
@@ -46,7 +47,7 @@ func main() {
 	// ==========
 	// Relevance filter
 	// ==========
-	semanticRelevance, err := crawler.NewSemanticRelevanceFilter(mpnetbasev2, 0.61)
+	semanticRelevance, err := relevance.NewSemanticRelevanceFilter(mpnetbasev2, 0.61)
 	if err != nil {
 		log.Fatalf("Failed to initialize semantic relevance filter: %v", err)
 	}
@@ -71,7 +72,7 @@ func main() {
 }
 
 func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
-	embed embedding.Client, sem *crawler.SemanticRelevanceFilter) http.HandlerFunc {
+	embed embedding.Client, sem *relevance.SemanticRelevanceFilter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		type RequestBody struct {
 			Query     string `json:"query"`
@@ -105,7 +106,7 @@ func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
 		// 	urls = append(urls, searchResults[i].URL)
 		// }
 
-		var filter crawler.RelevanceFilter
+		var filter relevance.RelevanceFilterClient
 		if body.CrawlType == "semantic" {
 			ctx := context.Background()
 			embeddings, err := embed.GetEmbeddings(ctx, []string{body.Query})
@@ -115,7 +116,7 @@ func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
 			sem.QueryEmbedding = embeddings[0]
 			filter = sem
 		} else {
-			rf, err := crawler.NewKeywordRelevanceFilter(body.Query)
+			rf, err := relevance.NewKeywordRelevanceFilter(body.Query)
 			if err != nil {
 				http.Error(w, "error keyword relevancne filter", http.StatusInternalServerError)
 			}
