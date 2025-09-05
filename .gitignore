@@ -32,3 +32,6 @@ peers_db
 
 volumes/
 /volumes
+./model/venv
+/model/venv
+model/venv

@@ -24,7 +24,7 @@ func (c *CrawlClient) CreateCrawlCollection(ctx context.Context) error {
 	err = c.Client.CreateCollection(ctx, &qdrant.CreateCollection{
 		CollectionName: CrawlCollectionName,
 		VectorsConfig: qdrant.NewVectorsConfig(&qdrant.VectorParams{
-			Size:     384, // Adjust based on your embedding dimension
+			Size:     768, // Adjust based on your embedding dimension
 			Distance: qdrant.Distance_Cosine,
 		}),
 	})
@@ -35,19 +35,13 @@ func (c *CrawlClient) CreateCrawlCollection(ctx context.Context) error {
 }
 
 func (c *CrawlClient) InsertOne(ctx context.Context, doc *repository.CrawlVectorDoc) error {
-	// Flatten the 2D embedding to 1D for Qdrant
-	var flatEmbedding []float32
-	for _, chunk := range doc.ContentEmbedding {
-		flatEmbedding = append(flatEmbedding, chunk...)
-	}
-
 	md := map[string]any{
 		"url":     doc.URL,
 		"content": doc.Content,
 	}
 	point := &qdrant.PointStruct{
 		Id:      qdrant.NewID(uuid.New().String()),
-		Vectors: qdrant.NewVectorsDense(flatEmbedding),
+		Vectors: qdrant.NewVectorsDense(doc.ContentEmbedding),
 		Payload: qdrant.NewValueMap(md),
 	}
 

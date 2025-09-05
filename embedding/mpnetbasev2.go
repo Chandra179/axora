@@ -10,13 +10,13 @@ import (
 	"time"
 )
 
-type AllMinilmL6V2 struct {
+type MpnetBaseV2 struct {
 	BaseURL    string
 	HTTPClient *http.Client
 }
 
-func NewAllMinilmL6V2(baseURL string) *AllMinilmL6V2 {
-	return &AllMinilmL6V2{
+func NewMpnetBaseV2(baseURL string) *MpnetBaseV2 {
+	return &MpnetBaseV2{
 		BaseURL: baseURL,
 		HTTPClient: &http.Client{
 			Timeout: 30 * time.Second,
@@ -24,7 +24,7 @@ func NewAllMinilmL6V2(baseURL string) *AllMinilmL6V2 {
 	}
 }
 
-func (c *AllMinilmL6V2) GetEmbeddings(ctx context.Context, texts []string) ([][]float32, error) {
+func (c *MpnetBaseV2) GetEmbeddings(ctx context.Context, texts []string) ([][]float32, error) {
 	reqBody := EmbeddingRequest{
 		Inputs: texts,
 	}
@@ -48,7 +48,7 @@ func (c *AllMinilmL6V2) GetEmbeddings(ctx context.Context, texts []string) ([][]
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("AllMinilmL6V2 service returned status %d: %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("service returned status %d: %s", resp.StatusCode, string(body))
 	}
 
 	body, err := io.ReadAll(resp.Body)

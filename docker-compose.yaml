@@ -1,14 +1,14 @@
 version: '3.5'
 
 services:
-  axora-minilml6v2:
+  axora-mpnetbasev2:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
-    container_name: axora-minilml6v2
+    container_name: axora-mpnetbasev2
     restart: unless-stopped
     environment:
-      - MODEL_ID=sentence-transformers/all-MiniLM-L6-v2
+      - MODEL_ID=sentence-transformers/all-mpnet-base-v2
       - PORT=8000
-      - MAX_CONCURRENT_REQUESTS=4
+      - MAX_CONCURRENT_REQUESTS=100
       - MAX_BATCH_TOKENS=1024
       - MAX_BATCH_REQUESTS=8
       - NUM_SHARD=1
@@ -17,7 +17,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - axora-minilml6v2-cache:/data
+      - axora-mpnetbasev2-cache:/data
     networks:
       - axora-network
     deploy:
@@ -44,11 +44,10 @@ services:
     environment:
       APP_PORT: ${APP_PORT}
       SERP_API_KEY: ${SERP_API_KEY}
-      TEI_MODEL_CLIENT_URL: ${TEI_MODEL_CLIENT_URL}
       QDRANT_HTTP_PORT: ${QDRANT_HTTP_PORT}
       QDRANT_GRPC_PORT: ${QDRANT_GRPC_PORT}
       QDRANT_HOST: ${QDRANT_HOST}
-      MINILML6V2_URL: ${MINILML6V2_URL}
+      MPNETBASEV2_URL: ${MPNETBASEV2_URL}
       DOCKER_BUILDKIT: 1
     ports:
       - "${APP_PORT}:8080"
@@ -62,8 +61,8 @@ services:
         reservations:
           cpus: '0.5'
           memory: 512M
-  
-  qdrant:
+
+  axora-qdrant:
     container_name: axora-qdrant
     image: qdrant/qdrant:latest
     ports:
@@ -77,9 +76,38 @@ services:
     networks:
       - axora-network
 
+  axora-semantic-chunker:
+    build: 
+      context: ./model
+      dockerfile: Dockerfile.pithon
+    container_name: axora-semantic-chunker
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      - MPNETBASEV2_URL=${MPNETBASEV2_URL}
+    depends_on:
+      - axora-mpnetbasev2
+    networks:
+      - axora-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.2'
+          memory: 256M
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
 volumes:
   qdrant_storage:
-  axora-minilml6v2-cache:
+  axora-mpnetbasev2-cache:
 
 networks:
   axora-network:

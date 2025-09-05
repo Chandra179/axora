@@ -5,12 +5,14 @@ import (
 	"log"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"axora/embedding"
 	"axora/repository"
 
 	"github.com/gocolly/colly/v2"
+	"github.com/tmc/langchaingo/textsplitter"
 )
 
 type Worker struct {
@@ -25,13 +27,13 @@ type Worker struct {
 func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, embeddingClient embedding.Client, extractor *ContentExtractor) *Worker {
 	c := colly.NewCollector(
 		colly.UserAgent("Axora-Crawler/1.0"),
-		colly.MaxDepth(10),
+		colly.MaxDepth(2),
 		colly.Async(true),
 	)
 
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 3,
+		Parallelism: 2,
 	})
 
 	loopDetector := NewLoopDetector(3)
@@ -98,20 +100,50 @@ func (w *Worker) Crawl(ctx context.Context, relevanceFilter RelevanceFilter, url
 		if !isRelevant {
 			return
 		}
-		contentEmbed, err := w.embeddingClient.GetEmbeddings(ctx, []string{content})
+
+		splitter := textsplitter.NewRecursiveCharacter(
+			textsplitter.WithChunkSize(50),
+			textsplitter.WithChunkOverlap(10),
+		)
+		chunks, err := splitter.SplitText(content)
 		if err != nil {
-			log.Printf("Embed process failed: %s Error", err)
+			log.Printf("splitter: %v", err)
 			return
 		}
-		err = w.crawlVectorRepo.InsertOne(ctx, &repository.CrawlVectorDoc{
-			URL:              url,
-			Content:          content,
-			CrawledAt:        timestamp,
-			ContentEmbedding: contentEmbed,
-		})
-		if err != nil {
-			log.Print("err insert vector: " + err.Error())
+
+		maxConcurrent := 3
+		sem := make(chan struct{}, maxConcurrent)
+		var wg sync.WaitGroup
+
+		for _, chunk := range chunks {
+			wg.Add(1)
+
+			go func(c string) {
+				defer wg.Done()
+
+				// acquire slot
+				sem <- struct{}{}
+				defer func() { <-sem }() // release slot when done
+
+				contentEmbed, err := w.embeddingClient.GetEmbeddings(ctx, []string{c})
+				if err != nil {
+					log.Printf("Embed process failed: %s", err)
+					return
+				}
+				err = w.crawlVectorRepo.InsertOne(ctx, &repository.CrawlVectorDoc{
+					URL:              url,
+					Content:          chunk,
+					CrawledAt:        timestamp,
+					ContentEmbedding: contentEmbed[0],
+				})
+				if err != nil {
+					log.Printf("err insert vector: %s", err)
+				}
+			}(chunk)
 		}
+
+		wg.Wait()
+
 	})
 
 	for _, url := range urls {

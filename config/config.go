@@ -31,7 +31,7 @@ func Load() (*Config, error) {
 		AppPort: appPort,
 
 		SerpApiKey:       getEnv("SERP_API_KEY"),
-		AllMinilmL6V2URL: getEnv("MINILML6V2_URL"),
+		AllMinilmL6V2URL: getEnv("MPNETBASEV2_URL"),
 
 		QdrantPort: qdrantPort,
 		QdrantHost: getEnv("QDRANT_HOST"),

@@ -9,6 +9,10 @@ type EmbeddingRequest struct {
 type EmbeddingResponse [][]float32
 
 type Client interface {
+	// If you send 3 texts, you’ll get 3 vectors.
+	// If you send 1 text, you’ll still get 1 vector — but wrapped in a list.
+	// Input: ["this is a text"] → list of strings
+	// Output: [ [0.12, -0.33, 0.57, ...] ]
 	GetEmbeddings(ctx context.Context, texts []string) ([][]float32, error)
 }
 

@@ -10,8 +10,8 @@ type CrawlVectorRepo interface {
 }
 
 type CrawlVectorDoc struct {
-	URL              string      `json:"url"`
-	Content          string      `json:"content"`
-	ContentEmbedding [][]float32 `json:"content_embedding"`
-	CrawledAt        time.Time   `json:"crawledAt"`
+	URL              string    `json:"url"`
+	Content          string    `json:"content"`
+	ContentEmbedding []float32 `json:"content_embedding"`
+	CrawledAt        time.Time `json:"crawledAt"`
 }

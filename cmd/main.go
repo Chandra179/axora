@@ -16,7 +16,6 @@ import (
 )
 
 func main() {
-	fmt.Println("Start")
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
@@ -40,14 +39,14 @@ func main() {
 	extractor := crawler.NewContentExtractor()
 
 	// ==========
-	// MinilmL6V2
+	// EMBBEDDING
 	// ==========
-	minilmL6V2 := embedding.NewAllMinilmL6V2(cfg.AllMinilmL6V2URL)
+	mpnetbasev2 := embedding.NewMpnetBaseV2(cfg.AllMinilmL6V2URL)
 
 	// ==========
 	// Relevance filter
 	// ==========
-	semanticRelevance, err := crawler.NewSemanticRelevanceFilter(minilmL6V2, 0.61)
+	semanticRelevance, err := crawler.NewSemanticRelevanceFilter(mpnetbasev2, 0.61)
 	if err != nil {
 		log.Fatalf("Failed to initialize semantic relevance filter: %v", err)
 	}
@@ -55,7 +54,7 @@ func main() {
 	// ==========
 	// Crawler worker
 	// ==========
-	worker := crawler.NewWorker(qdb, minilmL6V2, extractor)
+	worker := crawler.NewWorker(qdb, mpnetbasev2, extractor)
 
 	// ==========
 	// Search
@@ -65,7 +64,7 @@ func main() {
 	// ==========
 	// HTTP
 	// ==========
-	http.Handle("/search", Crawl(serp, worker, minilmL6V2, semanticRelevance))
+	http.Handle("/search", Crawl(serp, worker, mpnetbasev2, semanticRelevance))
 
 	fmt.Println("Running")
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil))
@@ -122,6 +121,10 @@ func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
 			}
 			filter = rf
 		}
-		worker.Crawl(context.Background(), filter, []string{"https://news.ycombinator.com/"})
+		worker.Crawl(context.Background(), filter, []string{
+			"https://openai.com/news/", "https://machinelearningmastery.com/blog/", "https://aws.amazon.com/blogs/machine-learning/",
+			"https://bair.berkeley.edu/blog/", "https://research.google/blog/", "https://deepmind.google/discover/blog/",
+			"https://news.mit.edu/topic/artificial-intelligence2", "https://www.kdnuggets.com/",
+		})
 	}
 }

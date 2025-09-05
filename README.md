@@ -2,6 +2,7 @@
 
 An intelligent web crawler that uses semantic similarity to filter relevant content based on search queries. Axora combines traditional web crawling with modern NLP techniques to collect and store only the most relevant web content.
 
+## Crawl
 ## Crawling (go-colly)
 - Using go-colly, with configurable(depth)
 - Loop detector for visiting URLs, prevent multiple visits on the same url
@@ -13,13 +14,13 @@ An intelligent web crawler that uses semantic similarity to filter relevant cont
 ## Relevance filter
 Checking if html content is relevant to given query
 
-### Cosine similarity using all-MiniLM-L6-v2
+### Cosine similarity
 - Prefer for 7-100 word with meaning for better result
 - Strong semantic understanding (matches concepts, not just keywords)
 - Multilingual support
 - 384-dimensional embeddings
 
-### Keywords filter Aho-corasick
+### Keywords filter
 - Filtering content that only includes any of keywords, ex: "abc, neural network, llm"
 - Ex: 200 words content, check if any words/multi-word in the content includes "keywords"
 
@@ -46,18 +47,8 @@ start -> level1 -> level2 -> level3 -> back_to_level2 -> level3 -> back_to_level
 - Depth limit: Prevents going too deep
 - Loop detection: Prevents the level2 ↔ level3 ping-pong
 
-## Collection
-```json
-{
-  "_id" : "68aebe024b1dc2e2de726227",
-  "url": "https://www.ycombinator.com/companies/mbodi-ai/jobs/ftTsxcl-founding-research-engineer",
-  "content": "Embodied AI Platform for Industrial RoboticsFounding Research ...", //html body (text) still need to be cleaned
-  "crawled_at": "ISODate('2025-08-27T08:16:20.374Z')"
-}
-```
-
 ## Vector
-- Using semantic chunking embeddings (500–1000 tokens, ~100 overlap)
+- Semantic chunking text
 - Vector search finds semantically similar chunks, but you often want filters:
   ```
   language = en
