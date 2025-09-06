@@ -14,6 +14,8 @@ type Config struct {
 
 	QdrantHost string
 	QdrantPort int
+
+	ChunkingURL string
 }
 
 func Load() (*Config, error) {
@@ -35,6 +37,8 @@ func Load() (*Config, error) {
 
 		QdrantPort: qdrantPort,
 		QdrantHost: getEnv("QDRANT_HOST"),
+
+		ChunkingURL: getEnv("CHUNKING_URL"),
 	}, nil
 }
 

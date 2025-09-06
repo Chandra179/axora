@@ -17,6 +17,31 @@ EMBEDDING_SERVICE_URL = os.getenv("MPNETBASEV2_URL", "http://axora-mpnetbasev2:8
 class ChunkRequest(BaseModel):
     text: str
 
+# Response model
+class ChunkResponse(BaseModel):
+    text: str
+    vector: List[float]
+
+def get_embedding(text: str) -> List[float]:
+    """Get embedding for a single text from external service"""
+    logging.info(f"Getting embedding for text of length {len(text)}")
+    try:
+        response = requests.post(
+            f"{EMBEDDING_SERVICE_URL}/embed",
+            json={"inputs": [text]},
+            timeout=30
+        )
+        response.raise_for_status()
+        embeddings = response.json()
+        logging.info("Successfully received embedding.")
+        return embeddings[0]  # Return the first (and only) embedding
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Request to embedding service failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Embedding service error: {str(e)}")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred in get_embedding: {e}")
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
+
 def get_embeddings(texts: List[str]) -> List[List[float]]:
     """Get embeddings from external service"""
     logging.info(f"Attempting to get embeddings for {len(texts)} texts from {EMBEDDING_SERVICE_URL}")
@@ -47,9 +72,9 @@ embedding_model = ExternalEmbeddings()
 text_splitter = SemanticChunker(embedding_model)
 
 @app.post("/chunk")
-async def chunk_text(request: ChunkRequest) -> List[List[float]]:
+async def chunk_text(request: ChunkRequest) -> List[ChunkResponse]:
     """
-    Chunk text semantically and return embeddings as array of arrays of floats
+    Chunk text semantically and return text with embeddings
     """
     logging.info("Received a new text chunking request.")
     
@@ -64,14 +89,16 @@ async def chunk_text(request: ChunkRequest) -> List[List[float]]:
             return []
         
         logging.info(f"Generated {len(chunks)} chunks.")
-        logging.info(chunks)
         
-        chunk_texts = [chunk.page_content for chunk in chunks]
+        # Process each chunk individually to ensure text-vector mapping
+        result = []
+        for i, chunk in enumerate(chunks):
+            logging.info(f"Processing chunk {i+1}/{len(chunks)} chunk_len: {len(chunk.page_content)}")
+            vector = get_embedding(chunk.page_content)
+            result.append(ChunkResponse(text=chunk.page_content, vector=vector))
         
-        embeddings = get_embeddings(chunk_texts)
-        
-        logging.info("Successfully processed request and returning embeddings.")
-        return embeddings
+        logging.info("Successfully processed request and returning text-vector pairs.")
+        return result
         
     except HTTPException as http_exc:
         raise http_exc

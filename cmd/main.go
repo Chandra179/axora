@@ -10,6 +10,7 @@ import (
 
 	"axora/config"
 	"axora/crawler"
+	"axora/pkg/chunking"
 	"axora/pkg/embedding"
 	qdrantClient "axora/pkg/qdrantdb"
 	"axora/relevance"
@@ -35,14 +36,13 @@ func main() {
 	}
 
 	// ==========
-	// EXTRACTOR
+	//
 	// ==========
 	extractor := crawler.NewContentExtractor()
-
-	// ==========
-	// EMBBEDDING
-	// ==========
 	mpnetbasev2 := embedding.NewMpnetBaseV2(cfg.AllMinilmL6V2URL)
+	// semanticChunking := chunking.NewSemanticChunking(cfg.ChunkingURL)
+	search := search.NewSerpApiSearchEngine(cfg.SerpApiKey)
+	recurCharChunking := chunking.NewRecursiveCharacterChunking(mpnetbasev2)
 
 	// ==========
 	// Relevance filter
@@ -55,17 +55,12 @@ func main() {
 	// ==========
 	// Crawler worker
 	// ==========
-	worker := crawler.NewWorker(qdb, mpnetbasev2, extractor)
-
-	// ==========
-	// Search
-	// ==========
-	serp := search.NewSerpApiSearchEngine(cfg.SerpApiKey)
+	worker := crawler.NewWorker(qdb, extractor, recurCharChunking)
 
 	// ==========
 	// HTTP
 	// ==========
-	http.Handle("/search", Crawl(serp, worker, mpnetbasev2, semanticRelevance))
+	http.Handle("/search", Crawl(search, worker, mpnetbasev2, semanticRelevance))
 
 	fmt.Println("Running")
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil))

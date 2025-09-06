@@ -8,24 +8,23 @@ import (
 	"sync"
 	"time"
 
-	"axora/pkg/embedding"
+	"axora/pkg/chunking"
 	"axora/relevance"
 	"axora/repository"
 
 	"github.com/gocolly/colly/v2"
-	"github.com/tmc/langchaingo/textsplitter"
 )
 
 type Worker struct {
 	collector       *colly.Collector
+	chunker         chunking.ChunkingClient
 	crawlVectorRepo repository.CrawlVectorRepo
 	extractor       *ContentExtractor
 	relevanceFilter relevance.RelevanceFilterClient
-	embeddingClient embedding.Client
 	loopDetector    *LoopDetector
 }
 
-func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, embeddingClient embedding.Client, extractor *ContentExtractor) *Worker {
+func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExtractor, chunker chunking.ChunkingClient) *Worker {
 	c := colly.NewCollector(
 		colly.UserAgent("Axora-Crawler/1.0"),
 		colly.MaxDepth(2),
@@ -41,10 +40,10 @@ func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, embeddingClient embed
 
 	worker := &Worker{
 		collector:       c,
+		chunker:         chunker,
 		crawlVectorRepo: crawlVectorRepo,
 		extractor:       extractor,
 		loopDetector:    loopDetector,
-		embeddingClient: embeddingClient,
 	}
 
 	return worker
@@ -102,13 +101,9 @@ func (w *Worker) Crawl(ctx context.Context, relevanceFilter relevance.RelevanceF
 			return
 		}
 
-		splitter := textsplitter.NewRecursiveCharacter(
-			textsplitter.WithChunkSize(50),
-			textsplitter.WithChunkOverlap(10),
-		)
-		chunks, err := splitter.SplitText(content)
+		chunks, err := w.chunker.ChunkText(content)
 		if err != nil {
-			log.Printf("splitter: %v", err)
+			log.Printf("Error chunking text for URL: %s Error: %v", url, err)
 			return
 		}
 
@@ -119,23 +114,21 @@ func (w *Worker) Crawl(ctx context.Context, relevanceFilter relevance.RelevanceF
 		for _, chunk := range chunks {
 			wg.Add(1)
 
-			go func(c string) {
+			go func(c chunking.ChunkOutput) {
 				defer wg.Done()
 
 				// acquire slot
 				sem <- struct{}{}
 				defer func() { <-sem }() // release slot when done
 
-				contentEmbed, err := w.embeddingClient.GetEmbeddings(ctx, []string{c})
-				if err != nil {
-					log.Printf("Embed process failed: %s", err)
-					return
+				if len(chunk.Vector) == 0 {
+
 				}
 				err = w.crawlVectorRepo.InsertOne(ctx, &repository.CrawlVectorDoc{
 					URL:              url,
-					Content:          chunk,
+					Content:          chunk.Text,
 					CrawledAt:        timestamp,
-					ContentEmbedding: contentEmbed[0],
+					ContentEmbedding: chunk.Vector,
 				})
 				if err != nil {
 					log.Printf("err insert vector: %s", err)
