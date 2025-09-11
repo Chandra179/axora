@@ -10,7 +10,7 @@ POST http://localhost:8080/search
 Content-Type: application/json
 
 {
-  "query": "how neural network works",
+  "query": "what is neural networks",
   "crawl_type": "semantic"
 }
 
