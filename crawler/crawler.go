@@ -36,7 +36,7 @@ func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExt
 
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 2,
+		Parallelism: 3,
 	})
 
 	worker := &Worker{
@@ -92,7 +92,6 @@ func (w *Worker) Crawl(ctx context.Context, relevanceFilter relevance.RelevanceF
 			return
 		}
 		if content.IsBoilerplate {
-			log.Printf("boilerplate text: %s", content.Text)
 			return
 		}
 
@@ -103,7 +102,7 @@ func (w *Worker) Crawl(ctx context.Context, relevanceFilter relevance.RelevanceF
 		}
 
 		g, ctx := errgroup.WithContext(ctx)
-		g.SetLimit(3)
+		g.SetLimit(2)
 
 		for _, chunk := range chunks {
 			g.Go(func(c chunking.ChunkOutput) func() error {
