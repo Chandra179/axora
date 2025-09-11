@@ -4,7 +4,6 @@ import (
 	"context"
 	"log"
 	"net/url"
-	"strings"
 	"sync"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 	"axora/repository"
 
 	"github.com/gocolly/colly/v2"
+	"golang.org/x/sync/errgroup"
 )
 
 type Worker struct {
@@ -21,7 +21,9 @@ type Worker struct {
 	crawlVectorRepo repository.CrawlVectorRepo
 	extractor       *ContentExtractor
 	relevanceFilter relevance.RelevanceFilterClient
-	loopDetector    *LoopDetector
+	visitedURL      map[string]int
+	maxURLVisits    int
+	mutex           sync.RWMutex
 }
 
 func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExtractor, chunker chunking.ChunkingClient) *Worker {
@@ -36,31 +38,16 @@ func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExt
 		Parallelism: 2,
 	})
 
-	loopDetector := NewLoopDetector(3)
-
 	worker := &Worker{
 		collector:       c,
 		chunker:         chunker,
 		crawlVectorRepo: crawlVectorRepo,
 		extractor:       extractor,
-		loopDetector:    loopDetector,
+		visitedURL:      make(map[string]int),
+		maxURLVisits:    3,
 	}
 
 	return worker
-}
-
-func isVisitableURL(str string) bool {
-	u, err := url.ParseRequestURI(str)
-	if err != nil {
-		return false
-	}
-	if u.Scheme != "http" && u.Scheme != "https" {
-		return false
-	}
-	if u.Host == "" {
-		return false
-	}
-	return true
 }
 
 func (w *Worker) Crawl(ctx context.Context, relevanceFilter relevance.RelevanceFilterClient, urls []string) {
@@ -68,17 +55,29 @@ func (w *Worker) Crawl(ctx context.Context, relevanceFilter relevance.RelevanceF
 	w.relevanceFilter = relevanceFilter
 
 	w.collector.OnRequest(func(r *colly.Request) {
-		w.loopDetector.IncVisit(r.URL.String())
+		w.mutex.Lock()
+		defer w.mutex.Unlock()
+		w.visitedURL[r.URL.String()]++
 	})
 
 	w.collector.OnHTML("a[href]", func(e *colly.HTMLElement) {
 		link := e.Attr("href")
 		absoluteURL := e.Request.AbsoluteURL(link)
-		if !isVisitableURL(absoluteURL) {
+		u, err := url.ParseRequestURI(absoluteURL)
+		if err != nil {
 			return
 		}
-		if w.loopDetector.CheckLoop(absoluteURL) {
-			log.Printf("[LOOP_DETECTOR] BLOCKING URL: %s - exceeded max visits %d", absoluteURL, w.loopDetector.maxVisits)
+		if u.Scheme != "http" && u.Scheme != "https" {
+			return
+		}
+		if u.Host == "" {
+			return
+		}
+		w.mutex.Lock()
+		defer w.mutex.Unlock()
+		currentVisits := w.visitedURL[absoluteURL]
+		if currentVisits >= w.maxURLVisits {
+			log.Printf("[VISIT_COUNTER] BLOCKING URL: %s - exceeded max visits %d", absoluteURL, w.maxURLVisits)
 			return
 		}
 		e.Request.Visit(absoluteURL)
@@ -86,14 +85,20 @@ func (w *Worker) Crawl(ctx context.Context, relevanceFilter relevance.RelevanceF
 
 	w.collector.OnScraped(func(r *colly.Response) {
 		url := r.Request.URL.String()
-		content, _ := w.extractor.ExtractText(string(r.Body), r.Request.URL)
-		timestamp := time.Now()
-		if strings.TrimSpace(content) == "" {
+		content, err := w.extractor.ExtractText(string(r.Body), r.Request.URL)
+		if err != nil {
+			log.Printf("err extracting text: %v", err)
 			return
 		}
-		isRelevant, score, err := w.relevanceFilter.IsURLRelevant(content)
+		timestamp := time.Now()
+		isRelevant, score, err := w.relevanceFilter.IsContentRelevant(content.Text)
 		if err != nil {
 			log.Printf("Error checking relevance for URL: %s Error: %v", url, err)
+			return
+		}
+
+		if content.IsBoilerplate {
+			log.Printf("boilerplate text: %s", content.Text)
 			return
 		}
 		log.Printf("URL: %s Score: %.3f", url, score)
@@ -101,42 +106,31 @@ func (w *Worker) Crawl(ctx context.Context, relevanceFilter relevance.RelevanceF
 			return
 		}
 
-		chunks, err := w.chunker.ChunkText(content)
+		chunks, err := w.chunker.ChunkText(content.Text)
 		if err != nil {
 			log.Printf("Error chunking text for URL: %s Error: %v", url, err)
 			return
 		}
 
-		maxConcurrent := 3
-		sem := make(chan struct{}, maxConcurrent)
-		var wg sync.WaitGroup
+		g, ctx := errgroup.WithContext(ctx)
+		g.SetLimit(3)
 
 		for _, chunk := range chunks {
-			wg.Add(1)
-
-			go func(c chunking.ChunkOutput) {
-				defer wg.Done()
-
-				// acquire slot
-				sem <- struct{}{}
-				defer func() { <-sem }() // release slot when done
-
-				if len(chunk.Vector) == 0 {
-
+			g.Go(func(c chunking.ChunkOutput) func() error {
+				return func() error {
+					return w.crawlVectorRepo.InsertOne(ctx, &repository.CrawlVectorDoc{
+						URL:              url,
+						Content:          content.Text,
+						CrawledAt:        timestamp,
+						ContentEmbedding: c.Vector,
+					})
 				}
-				err = w.crawlVectorRepo.InsertOne(ctx, &repository.CrawlVectorDoc{
-					URL:              url,
-					Content:          chunk.Text,
-					CrawledAt:        timestamp,
-					ContentEmbedding: chunk.Vector,
-				})
-				if err != nil {
-					log.Printf("err insert vector: %s", err)
-				}
-			}(chunk)
+			}(chunk))
 		}
 
-		wg.Wait()
+		if err := g.Wait(); err != nil {
+			log.Printf("error inserting vector: %v", err)
+		}
 
 	})
 

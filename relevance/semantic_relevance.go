@@ -19,7 +19,7 @@ func NewSemanticRelevanceFilter(embeddingClient embedding.Client, threshold floa
 	}, nil
 }
 
-func (s *SemanticRelevanceFilter) IsURLRelevant(content string) (bool, float32, error) {
+func (s *SemanticRelevanceFilter) IsContentRelevant(content string) (bool, float32, error) {
 	if content == "" {
 		return false, 0.0, nil
 	}

@@ -4,13 +4,12 @@ services:
   axora-mpnetbasev2:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
     container_name: axora-mpnetbasev2
-    restart: unless-stopped
     environment:
       - MODEL_ID=sentence-transformers/all-mpnet-base-v2
       - PORT=8000
       - MAX_CONCURRENT_REQUESTS=100
-      - MAX_BATCH_TOKENS=1024
-      - MAX_BATCH_REQUESTS=8
+      - MAX_BATCH_TOKENS=4096
+      - MAX_BATCH_REQUESTS=64
       - NUM_SHARD=1
       - CUDA_VISIBLE_DEVICES=""
       - HUGGING_FACE_HUB_TOKEN=""
@@ -29,7 +28,7 @@ services:
           cpus: '0.5'
           memory: 512M
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -40,7 +39,6 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: axora-crawler
-    restart: unless-stopped
     environment:
       APP_PORT: ${APP_PORT}
       SERP_API_KEY: ${SERP_API_KEY}
@@ -54,6 +52,9 @@ services:
       - "${APP_PORT}:8080"
     networks:
       - axora-network
+    depends_on:
+      axora-mpnetbasev2:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -82,13 +83,13 @@ services:
       context: ./model
       dockerfile: Dockerfile.pithon
     container_name: axora-semantic-chunker
-    restart: unless-stopped
     ports:
       - "8001:8001"
     environment:
       - MPNETBASEV2_URL=${MPNETBASEV2_URL}
     depends_on:
-      - axora-mpnetbasev2
+      axora-mpnetbasev2:
+        condition: service_healthy
     networks:
       - axora-network
     deploy:
@@ -99,12 +100,6 @@ services:
         reservations:
           cpus: '0.2'
           memory: 256M
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
 
 volumes:
   qdrant_storage:

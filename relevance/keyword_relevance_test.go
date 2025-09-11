@@ -28,7 +28,7 @@ func TestKeywordRelevanceFilter_LongContent(t *testing.T) {
 				t.Fatalf("unexpected error: %v", err)
 			}
 
-			rel, _, err := filter.IsURLRelevant(tc.content)
+			rel, _, err := filter.IsContentRelevant(tc.content)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}

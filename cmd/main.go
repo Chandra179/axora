@@ -24,7 +24,7 @@ func main() {
 	}
 
 	// ==========
-	// QDRANT DATABASE
+	// DATABASE
 	// ==========
 	qdb, err := qdrantClient.NewClient(cfg.QdrantHost, cfg.QdrantPort)
 	if err != nil {

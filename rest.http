@@ -2,9 +2,9 @@ POST http://localhost:8080/search
 Content-Type: application/json
 
 {
-  "query": "embed, mcp, gpt, gemini, openai, claude, grok, deepseek, Artificial Intelligence, sentence-transformers, tokenization, embedding, neural networks, deep learning, machine learning, ai agents, llm, transfer learning, nlp, fine-tuning, multimodal AI, natural language processing, gradient descent, backpropagation, self attention, transformers",
+  "query": "embed, data science, data intelligence, mcp, gpt, gemini, openai, claude, grok, deepseek, Artificial Intelligence, sentence-transformers, tokenization, embedding, neural networks, deep learning, machine learning, ai agents, llm, transfer learning, nlp, fine-tuning, multimodal AI, natural language processing, gradient descent, backpropagation, self attention, transformers",
   "crawl_type": "keywords"
-} 
+}
 
 curl -X POST \
   -H "Content-Type: application/json" \

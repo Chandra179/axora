@@ -9,6 +9,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/qdrant/go-client v1.15.2
 	github.com/tmc/langchaingo v0.1.13
+	golang.org/x/sync v0.17.0
 )
 
 require (
