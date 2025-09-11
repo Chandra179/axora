@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"net/url"
 	"sync"
@@ -29,7 +30,7 @@ type Worker struct {
 func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExtractor, chunker chunking.ChunkingClient) *Worker {
 	c := colly.NewCollector(
 		colly.UserAgent("Axora-Crawler/1.0"),
-		colly.MaxDepth(2),
+		colly.MaxDepth(3),
 		colly.Async(true),
 	)
 
@@ -90,19 +91,8 @@ func (w *Worker) Crawl(ctx context.Context, relevanceFilter relevance.RelevanceF
 			log.Printf("err extracting text: %v", err)
 			return
 		}
-		timestamp := time.Now()
-		isRelevant, score, err := w.relevanceFilter.IsContentRelevant(content.Text)
-		if err != nil {
-			log.Printf("Error checking relevance for URL: %s Error: %v", url, err)
-			return
-		}
-
 		if content.IsBoilerplate {
 			log.Printf("boilerplate text: %s", content.Text)
-			return
-		}
-		log.Printf("URL: %s Score: %.3f", url, score)
-		if !isRelevant {
 			return
 		}
 
@@ -118,10 +108,18 @@ func (w *Worker) Crawl(ctx context.Context, relevanceFilter relevance.RelevanceF
 		for _, chunk := range chunks {
 			g.Go(func(c chunking.ChunkOutput) func() error {
 				return func() error {
+					isRelevant, score, err := w.relevanceFilter.IsContentRelevant(c.Text)
+					if err != nil {
+						return fmt.Errorf("err checking relevance: %v", err)
+					}
+					if !isRelevant {
+						return nil
+					}
+					log.Printf("URL: %s Score: %.3f", url, score)
 					return w.crawlVectorRepo.InsertOne(ctx, &repository.CrawlVectorDoc{
 						URL:              url,
-						Content:          content.Text,
-						CrawledAt:        timestamp,
+						Content:          c.Text,
+						CrawledAt:        time.Now(),
 						ContentEmbedding: c.Vector,
 					})
 				}

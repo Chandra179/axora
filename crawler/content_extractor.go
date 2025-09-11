@@ -11,10 +11,8 @@ import (
 )
 
 type ContentExtractor struct {
-	MinWordCount   int
-	MaxLinkDensity float64
-	MaxListDensity float64
-	JunkPatterns   []string
+	MinWordCount int
+	JunkPatterns []string
 }
 
 type ExtractionResult struct {
@@ -26,9 +24,7 @@ type ExtractionResult struct {
 
 func NewContentExtractor() *ContentExtractor {
 	return &ContentExtractor{
-		MinWordCount:   120,
-		MaxLinkDensity: 30.0,
-		MaxListDensity: 50.0,
+		MinWordCount: 120,
 		JunkPatterns: []string{
 			`\b(home|about|contact|menu|navigation|subscribe|login|register|sign up)\b`,
 			`\b(next page|previous|see more|load more|read more|continue reading)\b`,
@@ -76,7 +72,7 @@ func (ce *ContentExtractor) detectBoilerplate(extractedText string) string {
 			matchCount++
 		}
 	}
-	if matchCount >= 3 {
+	if matchCount >= 20 {
 		return "matches junk patterns"
 	}
 

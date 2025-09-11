@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
-	"log"
 
 	"github.com/google/uuid"
 	"github.com/qdrant/go-client/qdrant"
@@ -59,7 +58,6 @@ func (c *CrawlClient) InsertOne(ctx context.Context, doc *repository.CrawlVector
 		return err
 	}
 	if len(resp) > 0 {
-		log.Print("data exist in db aaaaaaaaa")
 		return nil
 	}
 

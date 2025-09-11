@@ -110,12 +110,6 @@ func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
 			}
 			sem.QueryEmbedding = embeddings[0]
 			filter = sem
-		} else {
-			rf, err := relevance.NewKeywordRelevanceFilter(body.Query)
-			if err != nil {
-				http.Error(w, "error keyword relevancne filter", http.StatusInternalServerError)
-			}
-			filter = rf
 		}
 		worker.Crawl(context.Background(), filter, []string{
 			"https://openai.com/news/", "https://machinelearningmastery.com/blog/", "https://aws.amazon.com/blogs/machine-learning/",
