@@ -13,7 +13,7 @@ import (
 	"axora/pkg/chunking"
 	"axora/pkg/embedding"
 	qdrantClient "axora/pkg/qdrantdb"
-	"axora/relevance"
+	"axora/pkg/tor"
 	"axora/search"
 )
 
@@ -44,13 +44,20 @@ func main() {
 	search := search.NewSerpApiSearchEngine(cfg.SerpApiKey)
 	recurCharChunking := chunking.NewRecursiveCharacterChunking(mpnetbasev2)
 
-	// ==========
-	// Relevance filter
-	// ==========
-	semanticRelevance, err := relevance.NewSemanticRelevanceFilter(mpnetbasev2, 0.61)
+	torClient, err := tor.NewTorClient(cfg.TorProxyURL)
 	if err != nil {
-		log.Fatalf("Failed to initialize semantic relevance filter: %v", err)
+		log.Fatalf("Failed to create Tor client: %v", err)
 	}
+
+	// Test the connection
+	if err := torClient.TestConnection(); err != nil {
+		log.Fatalf("Tor connection test failed: %v", err)
+	}
+
+	// semanticRelevance, err := relevance.NewSemanticRelevanceFilter(mpnetbasev2, 0.61)
+	// if err != nil {
+	// 	log.Fatalf("Failed to initialize semantic relevance filter: %v", err)
+	// }
 
 	// ==========
 	// Crawler worker
@@ -60,18 +67,16 @@ func main() {
 	// ==========
 	// HTTP
 	// ==========
-	http.Handle("/search", Crawl(search, worker, mpnetbasev2, semanticRelevance))
+	http.Handle("/search", Crawl(search, worker, mpnetbasev2))
 
 	fmt.Println("Running")
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil))
 }
 
-func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
-	embed embedding.Client, sem *relevance.SemanticRelevanceFilter) http.HandlerFunc {
+func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker, embed embedding.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		type RequestBody struct {
-			Query     string `json:"query"`
-			CrawlType string `json:"crawl_type"`
+			Query string `json:"query"`
 		}
 
 		var body RequestBody
@@ -82,10 +87,6 @@ func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
 
 		if body.Query == "" {
 			http.Error(w, "missing query field", http.StatusBadRequest)
-			return
-		}
-		if body.CrawlType == "" {
-			http.Error(w, "missing crawl_type field", http.StatusBadRequest)
 			return
 		}
 
@@ -101,20 +102,6 @@ func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker,
 		// 	urls = append(urls, searchResults[i].URL)
 		// }
 
-		var filter relevance.RelevanceFilterClient
-		if body.CrawlType == "semantic" {
-			ctx := context.Background()
-			embeddings, err := embed.GetEmbeddings(ctx, []string{body.Query})
-			if err != nil {
-				http.Error(w, "error tei model", http.StatusInternalServerError)
-			}
-			sem.QueryEmbedding = embeddings[0]
-			filter = sem
-		}
-		worker.Crawl(context.Background(), filter, []string{
-			"https://openai.com/news/", "https://machinelearningmastery.com/blog/", "https://aws.amazon.com/blogs/machine-learning/",
-			"https://bair.berkeley.edu/blog/", "https://research.google/blog/", "https://deepmind.google/discover/blog/",
-			"https://news.mit.edu/topic/artificial-intelligence2", "https://www.kdnuggets.com/",
-		})
+		worker.Crawl(context.Background(), []string{"https://libgen.li/ads.php?md5=5e4a98758351903d7412aa5c8cb3aa04"})
 	}
 }

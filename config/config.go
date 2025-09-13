@@ -16,6 +16,7 @@ type Config struct {
 	QdrantPort int
 
 	ChunkingURL string
+	TorProxyURL string
 }
 
 func Load() (*Config, error) {
@@ -39,6 +40,8 @@ func Load() (*Config, error) {
 		QdrantHost: getEnv("QDRANT_HOST"),
 
 		ChunkingURL: getEnv("CHUNKING_URL"),
+
+		TorProxyURL: getEnv("TOR_PROXY_URL"),
 	}, nil
 }
 

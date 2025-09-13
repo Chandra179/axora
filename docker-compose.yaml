@@ -47,11 +47,14 @@ services:
       QDRANT_HOST: ${QDRANT_HOST}
       MPNETBASEV2_URL: ${MPNETBASEV2_URL}
       CHUNKING_URL: ${CHUNKING_URL}
+      TOR_PROXY_URL: ${TOR_PROXY_URL}
       DOCKER_BUILDKIT: 1
     ports:
       - "${APP_PORT}:8080"
+    volumes:
+      - ./downloads:/downloads
     networks:
-      - axora-network
+      - axora-network 
     depends_on:
       axora-mpnetbasev2:
         condition: service_healthy
@@ -100,10 +103,23 @@ services:
         reservations:
           cpus: '0.2'
           memory: 256M
+    
+  axora-tor:
+    image: dperson/torproxy:latest
+    container_name: axora-tor
+    ports:
+      - "9050:9050"  # SOCKS5 proxy port
+      - "9051:9051"  # Control port (optional)
+    networks:
+      - axora-network
+    restart: unless-stopped
+    environment:
+      - TOR_LOG_LEVEL=notice
 
 volumes:
   qdrant_storage:
   axora-mpnetbasev2-cache:
+  tor_data:
 
 networks:
   axora-network:
