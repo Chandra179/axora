@@ -13,7 +13,6 @@ import (
 	"axora/pkg/chunking"
 	"axora/pkg/embedding"
 	qdrantClient "axora/pkg/qdrantdb"
-	"axora/pkg/tor"
 	"axora/search"
 )
 
@@ -43,16 +42,6 @@ func main() {
 	// semanticChunking := chunking.NewSemanticChunking(cfg.ChunkingURL)
 	search := search.NewSerpApiSearchEngine(cfg.SerpApiKey)
 	recurCharChunking := chunking.NewRecursiveCharacterChunking(mpnetbasev2)
-
-	torClient, err := tor.NewTorClient(cfg.TorProxyURL)
-	if err != nil {
-		log.Fatalf("Failed to create Tor client: %v", err)
-	}
-
-	// Test the connection
-	if err := torClient.TestConnection(); err != nil {
-		log.Fatalf("Tor connection test failed: %v", err)
-	}
 
 	// semanticRelevance, err := relevance.NewSemanticRelevanceFilter(mpnetbasev2, 0.61)
 	// if err != nil {

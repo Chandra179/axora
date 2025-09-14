@@ -31,6 +31,7 @@ func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExt
 		colly.MaxDepth(3),
 		colly.AllowURLRevisit(),
 		colly.Async(true),
+		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
 	)
 
 	c.Limit(&colly.LimitRule{
