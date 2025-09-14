@@ -22,7 +22,11 @@ All links must be carefully validated before downloading. The domain must match 
 3. If resuming, the next request should start from the last saved offset onward. Once the download completes, the file’s MD5 checksum must be verified against the expected value to ensure integrity.  
 4. Optionally, the file can be split into multiple byte ranges and downloaded in parallel threads, then merged afterward to improve speed.  
 
+## Tor
+docker run --rm osminogin/tor-simple tor --hash-password "test12345"
+
 ## Other
 ex libgen.io, libgen.org, alternative domains: *.lc, *.li, *.gs, *.vg, *.la, *.bz, *.gl
 https://libgen.li/get.php?md5=5e4a98758351903d7412aa5c8cb3aa04&key=8PHX233W8SIWSCEX
 https://cdn3.booksdl.lc/get.php?md5=5e4a98758351903d7412aa5c8cb3aa04&key=8PHX233W8SIWSCEX
+

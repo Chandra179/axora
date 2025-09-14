@@ -105,16 +105,25 @@ services:
           memory: 256M
     
   axora-tor:
-    image: dperson/torproxy:latest
+    image: osminogin/tor-simple:latest  # More recent and lightweight Tor image
     container_name: axora-tor
     ports:
       - "9050:9050"  # SOCKS5 proxy port
-      - "9051:9051"  # Control port (optional)
+      - "9051:9051"  # Control port
+    volumes:
+      - tor_data:/var/lib/tor
+      - ./tor/torrc:/etc/tor/torrc:ro  # Custom Tor configuration
     networks:
       - axora-network
     restart: unless-stopped
     environment:
       - TOR_LOG_LEVEL=notice
+    healthcheck:
+      test: ["CMD", "curl", "--socks5", "127.0.0.1:9050", "--connect-timeout", "10", "https://check.torproject.org/api/ip"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
 
 volumes:
   qdrant_storage:

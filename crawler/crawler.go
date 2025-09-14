@@ -3,11 +3,14 @@ package crawler
 import (
 	"context"
 	"log"
+	"net/http"
 	"net/url"
 	"strings"
 	"sync"
+	"time"
 
 	"axora/pkg/chunking"
+	"axora/pkg/tor"
 	"axora/repository"
 
 	"github.com/gocolly/colly/v2"
@@ -22,10 +25,12 @@ type Worker struct {
 	maxURLVisits    int
 	mutex           sync.RWMutex
 	downloadManager *DownloadManager
+	torClient       *tor.TorClient
 }
 
 func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExtractor,
-	chunker chunking.ChunkingClient) *Worker {
+	chunker chunking.ChunkingClient, torClient *tor.TorClient) *Worker {
+
 	c := colly.NewCollector(
 		colly.UserAgent("Axora-Crawler/1.0"),
 		colly.MaxDepth(3),
@@ -34,9 +39,19 @@ func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExt
 		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
 	)
 
+	if torClient != nil {
+		transport := &http.Transport{
+			DialContext: torClient.GetDialContext(),
+		}
+
+		c.WithTransport(transport)
+		log.Println("Colly configured to use Tor proxy")
+	}
+
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 3,
+		Parallelism: 2,               // Reduced parallelism when using Tor to be more conservative
+		Delay:       2 * time.Second, // Add delay between requests to be respectful
 	})
 
 	worker := &Worker{
@@ -45,8 +60,9 @@ func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExt
 		crawlVectorRepo: crawlVectorRepo,
 		extractor:       extractor,
 		visitedURL:      make(map[string]int),
-		maxURLVisits:    10,
-		downloadManager: NewDownloadManager(),
+		maxURLVisits:    5,
+		downloadManager: NewDownloadManager(torClient),
+		torClient:       torClient,
 	}
 
 	return worker
@@ -82,7 +98,6 @@ func (w *Worker) isValidDownloadURL(rawURL string) bool {
 		"downloadname": true,
 		"key":          true,
 	}
-
 	for param := range u.Query() {
 		if !allowedParams[param] {
 			log.Printf("[URL_VALIDATION] Invalid query parameter: %s in URL: %s", param, rawURL)
@@ -114,6 +129,7 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 		w.mutex.Lock()
 		defer w.mutex.Unlock()
 		w.visitedURL[r.URL.String()]++
+		log.Printf("[REQUEST] Visiting: %s (visit count: %d)", r.URL.String(), w.visitedURL[r.URL.String()])
 	})
 
 	w.collector.OnHTML("a[href]", func(e *colly.HTMLElement) {
@@ -147,47 +163,30 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 	})
 
 	w.collector.OnError(func(r *colly.Response, err error) {
-		if r != nil {
-			log.Printf("[HTTP_ERROR] URL: %s - Status: %d - Error: %v", r.Request.URL, r.StatusCode, err)
-		} else {
-			log.Printf("[HTTP_ERROR] Request failed before response: %v", err)
-		}
+		log.Printf("[HTTP_ERROR] URL: %s - Status: %d - Error: %v", r.Request.URL, r.StatusCode, err)
 	})
 
 	w.collector.OnResponse(func(r *colly.Response) {
-		if w.isDownloadResponse(r) {
-			log.Printf("[DOWNLOAD] Download detected for URL: %s", r.Request.URL.String())
+		log.Printf("[RESPONSE] URL: %s - Status: %d - Size: %d bytes", r.Request.URL.String(), r.StatusCode, len(r.Body))
 
-			// Extract MD5 from URL if present
-			u, _ := url.Parse(r.Request.URL.String())
-			expectedMD5 := u.Query().Get("md5")
-			filename := u.Query().Get("downloadname")
-
-			if filename == "" {
-				// Try to extract filename from Content-Disposition
-				contentDisposition := r.Headers.Get("Content-Disposition")
-				if strings.Contains(contentDisposition, "filename=") {
-					parts := strings.Split(contentDisposition, "filename=")
-					if len(parts) > 1 {
-						filename = strings.Trim(strings.Split(parts[1], ";")[0], `"`)
-					}
-				}
-			}
-
-			if filename == "" {
-				filename = "download_" + strings.ReplaceAll(r.Request.URL.String(), "/", "_")
-			}
-
-			// Start download using download manager
-			go func() {
-				err := w.downloadManager.Download(r.Request.URL.String(), filename, expectedMD5)
-				if err != nil {
-					log.Printf("[DOWNLOAD] Failed to download %s: %v", r.Request.URL.String(), err)
-				} else {
-					log.Printf("[DOWNLOAD] Successfully downloaded: %s", filename)
-				}
-			}()
+		if !w.isDownloadResponse(r) {
+			return
 		}
+
+		rurl := r.Request.URL.String()
+		log.Printf("[DOWNLOAD] Download detected for URL: %s", rurl)
+		u, _ := url.Parse(rurl)
+		expectedMD5 := u.Query().Get("md5")
+		filename := "download_" + strings.ReplaceAll(rurl, "/", "_")
+
+		go func() {
+			err := w.downloadManager.Download(rurl, filename, expectedMD5)
+			if err != nil {
+				log.Printf("[DOWNLOAD] Failed to download %s: %v", rurl, err)
+			} else {
+				log.Printf("[DOWNLOAD] Successfully downloaded: %s", filename)
+			}
+		}()
 	})
 
 	for _, url := range urls {
@@ -199,52 +198,3 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 
 	w.collector.Wait()
 }
-
-// func (w *Worker) scrape(ctx context.Context) {
-// 	w.collector.OnScraped(func(r *colly.Response) {
-// 		url := r.Request.URL.String()
-// 		content, err := w.extractor.ExtractText(string(r.Body), r.Request.URL)
-// 		if err != nil {
-// 			log.Printf("err extracting text: %v", err)
-// 			return
-// 		}
-// 		if content.IsBoilerplate {
-// 			return
-// 		}
-
-// 		chunks, err := w.chunker.ChunkText(content.Text)
-// 		if err != nil {
-// 			log.Printf("Error chunking text for URL: %s Error: %v", url, err)
-// 			return
-// 		}
-
-// 		g, ctx := errgroup.WithContext(ctx)
-// 		g.SetLimit(2)
-
-// 		for _, chunk := range chunks {
-// 			g.Go(func(c chunking.ChunkOutput) func() error {
-// 				return func() error {
-// 					isRelevant, score, err := w.relevanceFilter.IsContentRelevant(c.Text)
-// 					if err != nil {
-// 						return fmt.Errorf("err checking relevance: %v", err)
-// 					}
-// 					if !isRelevant {
-// 						return nil
-// 					}
-// 					log.Printf("URL: %s Score: %.3f", url, score)
-// 					return w.crawlVectorRepo.InsertOne(ctx, &repository.CrawlVectorDoc{
-// 						URL:              url,
-// 						Content:          c.Text,
-// 						CrawledAt:        time.Now(),
-// 						ContentEmbedding: c.Vector,
-// 					})
-// 				}
-// 			}(chunk))
-// 		}
-
-// 		if err := g.Wait(); err != nil {
-// 			log.Printf("error inserting vector: %v", err)
-// 		}
-
-// 	})
-// }

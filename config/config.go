@@ -40,7 +40,6 @@ func Load() (*Config, error) {
 		QdrantHost: getEnv("QDRANT_HOST"),
 
 		ChunkingURL: getEnv("CHUNKING_URL"),
-
 		TorProxyURL: getEnv("TOR_PROXY_URL"),
 	}, nil
 }

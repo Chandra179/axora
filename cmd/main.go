@@ -13,6 +13,7 @@ import (
 	"axora/pkg/chunking"
 	"axora/pkg/embedding"
 	qdrantClient "axora/pkg/qdrantdb"
+	"axora/pkg/tor"
 	"axora/search"
 )
 
@@ -35,23 +36,31 @@ func main() {
 	}
 
 	// ==========
-	//
+	// TOR CLIENT
+	// ==========
+	torClient, err := tor.NewTorClient(cfg.TorProxyURL)
+	if err != nil {
+		log.Fatalf("Failed to initialize Tor client: %v", err)
+	}
+
+	if err := torClient.TestConnection(); err != nil {
+		log.Printf("Warning: Tor connection test failed: %v", err)
+	} else {
+		log.Println("Tor connection established successfully")
+	}
+
+	// ==========
+	// OTHER SERVICES
 	// ==========
 	extractor := crawler.NewContentExtractor()
 	mpnetbasev2 := embedding.NewMpnetBaseV2(cfg.AllMinilmL6V2URL)
-	// semanticChunking := chunking.NewSemanticChunking(cfg.ChunkingURL)
 	search := search.NewSerpApiSearchEngine(cfg.SerpApiKey)
 	recurCharChunking := chunking.NewRecursiveCharacterChunking(mpnetbasev2)
-
-	// semanticRelevance, err := relevance.NewSemanticRelevanceFilter(mpnetbasev2, 0.61)
-	// if err != nil {
-	// 	log.Fatalf("Failed to initialize semantic relevance filter: %v", err)
-	// }
 
 	// ==========
 	// Crawler worker
 	// ==========
-	worker := crawler.NewWorker(qdb, extractor, recurCharChunking)
+	worker := crawler.NewWorker(qdb, extractor, recurCharChunking, torClient)
 
 	// ==========
 	// HTTP
@@ -79,18 +88,6 @@ func Crawl(serp *search.SerpApiSearchEngine, worker *crawler.Worker, embed embed
 			return
 		}
 
-		// ==========
-		// Seed urls
-		// ==========
-		// searchResults, _ := serp.Search(context.Background(), &search.SearchRequest{
-		// 	Query:    query,
-		// 	MaxPages: 2,
-		// })
-		// urls := make([]string, len(searchResults))
-		// for i := 0; i < len(searchResults); i++ {
-		// 	urls = append(urls, searchResults[i].URL)
-		// }
-
-		worker.Crawl(context.Background(), []string{"https://libgen.li/ads.php?md5=5e4a98758351903d7412aa5c8cb3aa04"})
+		worker.Crawl(context.Background(), []string{"https://libgen.li/ads.php?md5=c86550a6a3ad8b49a33d09441fa995f6"})
 	}
 }
