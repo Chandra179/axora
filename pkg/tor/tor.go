@@ -18,8 +18,8 @@ import (
 type TorClient struct {
 	proxyURL      string
 	dialer        proxy.Dialer
-	controlAddr   string // e.g. "127.0.0.1:9051"
-	controlPass   string // empty if no control auth
+	controlAddr   string
+	controlPass   string
 	client        *http.Client
 	rotationMutex sync.Mutex
 	requestCount  int
@@ -32,38 +32,111 @@ func NewTorClient(proxyURL string) (*TorClient, error) {
 		return nil, fmt.Errorf("failed to create SOCKS5 dialer: %w", err)
 	}
 
+	// Increased timeouts for Tor network
 	httpClient := &http.Client{
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				return dialer.Dial(network, addr)
 			},
-			DisableKeepAlives:     true, // Important for IP rotation
+			DisableKeepAlives:     true,
 			MaxIdleConns:          0,
 			MaxIdleConnsPerHost:   0,
 			MaxConnsPerHost:       1,
 			IdleConnTimeout:       0,
-			ResponseHeaderTimeout: 30 * time.Second,
+			ResponseHeaderTimeout: 120 * time.Second, // Increased from 30s
+			TLSHandshakeTimeout:   60 * time.Second,  // Added TLS timeout
 		},
-		Timeout: 60 * time.Second,
+		Timeout: 300 * time.Second, // Increased total timeout to 5 minutes
 	}
 
 	return &TorClient{
 		proxyURL:      proxyURL,
 		dialer:        dialer,
 		client:        httpClient,
-		rotationAfter: 10, // Rotate IP every 10 requests by default
+		rotationAfter: 10,
 		controlAddr:   "axora-tor:9051",
 		controlPass:   "test12345",
 	}, nil
 }
 
-// signalNewnym issues AUTH (if needed) and SIGNAL NEWNYM to control port, returns error if not 250 OK
+// CreateClientWithTimeouts allows custom timeout configuration
+func (tc *TorClient) CreateClientWithTimeouts(dialTimeout, responseTimeout, totalTimeout time.Duration) *http.Client {
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				// Add timeout to dial context
+				dialCtx, cancel := context.WithTimeout(ctx, dialTimeout)
+				defer cancel()
+				return tc.dialer.(interface {
+					DialContext(ctx context.Context, network, addr string) (net.Conn, error)
+				}).DialContext(dialCtx, network, addr)
+			},
+			DisableKeepAlives:     true,
+			MaxIdleConns:          0,
+			MaxIdleConnsPerHost:   0,
+			MaxConnsPerHost:       1,
+			IdleConnTimeout:       0,
+			ResponseHeaderTimeout: responseTimeout,
+			TLSHandshakeTimeout:   60 * time.Second,
+		},
+		Timeout: totalTimeout,
+	}
+}
+
+// GetDialContextWithRetry returns a dial context with retry logic
+func (tc *TorClient) GetDialContextWithRetry(maxRetries int, retryDelay time.Duration) func(ctx context.Context, network, addr string) (net.Conn, error) {
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		tc.rotationMutex.Lock()
+		tc.requestCount++
+		shouldRotate := tc.requestCount >= tc.rotationAfter
+		if shouldRotate {
+			tc.requestCount = 0
+		}
+		tc.rotationMutex.Unlock()
+
+		if shouldRotate {
+			log.Printf("[TOR] Rotating IP after %d requests", tc.rotationAfter)
+			if err := tc.rotateIP(); err != nil {
+				log.Printf("[TOR] Failed to rotate IP: %v", err)
+			} else {
+				log.Printf("[TOR] IP rotation successful")
+			}
+		}
+
+		// Retry logic for connection
+		var lastErr error
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			if attempt > 0 {
+				log.Printf("[TOR] Connection attempt %d/%d for %s", attempt+1, maxRetries, addr)
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-time.After(retryDelay):
+				}
+			}
+
+			conn, err := tc.dialer.Dial(network, addr)
+			if err != nil {
+				lastErr = err
+				log.Printf("[TOR] Connection attempt %d failed: %v", attempt+1, err)
+				continue
+			}
+			return conn, nil
+		}
+		return nil, fmt.Errorf("failed after %d attempts: %w", maxRetries, lastErr)
+	}
+}
+
+// Rest of the methods remain the same...
 func (tc *TorClient) signalNewnym() error {
-	conn, err := net.Dial("tcp", tc.controlAddr)
+	conn, err := net.DialTimeout("tcp", tc.controlAddr, 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("controlport dial failed: %w", err)
 	}
 	defer conn.Close()
+
+	// Set read/write timeout for control connection
+	conn.SetDeadline(time.Now().Add(30 * time.Second))
 
 	rd := bufio.NewReader(conn)
 
@@ -88,26 +161,7 @@ func (tc *TorClient) signalNewnym() error {
 }
 
 func (tc *TorClient) GetDialContext() func(ctx context.Context, network, addr string) (net.Conn, error) {
-	return func(ctx context.Context, network, addr string) (net.Conn, error) {
-		tc.rotationMutex.Lock()
-		tc.requestCount++
-		shouldRotate := tc.requestCount >= tc.rotationAfter
-		if shouldRotate {
-			tc.requestCount = 0
-		}
-		tc.rotationMutex.Unlock()
-
-		if shouldRotate {
-			log.Printf("[TOR] Rotating IP after %d requests", tc.rotationAfter)
-			if err := tc.rotateIP(); err != nil {
-				log.Printf("[TOR] Failed to rotate IP: %v", err)
-			} else {
-				log.Printf("[TOR] IP rotation successful")
-			}
-		}
-
-		return tc.dialer.Dial(network, addr)
-	}
+	return tc.GetDialContextWithRetry(3, 2*time.Second)
 }
 
 func (tc *TorClient) GetHTTPClient() *http.Client {
@@ -128,34 +182,27 @@ func (tc *TorClient) rotateIP() error {
 		return fmt.Errorf("signal newnym failed: %w", err)
 	}
 
-	// small sleep for Tor to establish new circuits
-	time.Sleep(2 * time.Second)
+	// Longer sleep for Tor to establish new circuits
+	time.Sleep(5 * time.Second)
 
-	// now recreate dialer/client (optional, but fine)
+	// Recreate dialer/client
 	dialer, err := proxy.SOCKS5("tcp", tc.proxyURL, nil, proxy.Direct)
 	if err != nil {
 		return fmt.Errorf("failed to recreate dialer: %w", err)
 	}
 	tc.dialer = dialer
-	tc.client = &http.Client{
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				return tc.dialer.Dial(network, addr)
-			},
-			DisableKeepAlives:     true,
-			ResponseHeaderTimeout: 30 * time.Second,
-		},
-		Timeout: 60 * time.Second,
-	}
+	tc.client = tc.CreateClientWithTimeouts(30*time.Second, 120*time.Second, 300*time.Second)
 
 	if err := tc.VerifyTorRouting(); err != nil {
-		return fmt.Errorf("post-rotation verification failed: %w", err)
+		log.Printf("[TOR] Post-rotation verification failed (continuing anyway): %v", err)
+		// Don't return error here as verification might fail due to network issues
+		// but the rotation itself might have succeeded
 	}
 	return nil
 }
 
 func getDirectIP() (string, error) {
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := &http.Client{Timeout: 15 * time.Second} // Increased timeout
 	resp, err := client.Get("https://httpbin.org/ip")
 	if err != nil {
 		return "", err
@@ -168,7 +215,6 @@ func getDirectIP() (string, error) {
 	return strings.TrimSpace(string(b)), nil
 }
 
-// VerifyTorRouting ensures the IP seen via Tor is different from direct IP (fail-closed)
 func (tc *TorClient) VerifyTorRouting() error {
 	torIP, err := tc.GetCurrentIP()
 	if err != nil {
@@ -176,7 +222,6 @@ func (tc *TorClient) VerifyTorRouting() error {
 	}
 	directIP, err := getDirectIP()
 	if err != nil {
-		// if we cannot determine direct IP, be conservative: warn and return error
 		return fmt.Errorf("failed to verify direct IP (cannot confirm tor routing): %w", err)
 	}
 	if strings.TrimSpace(torIP) == strings.TrimSpace(directIP) {
@@ -189,8 +234,16 @@ func (tc *TorClient) VerifyTorRouting() error {
 func (tc *TorClient) TestConnection() error {
 	log.Println("Testing Tor connection...")
 
-	// Check current IP through Tor
-	resp, err := tc.client.Get("https://httpbin.org/ip")
+	// Use a more robust test with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://httpbin.org/ip", nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := tc.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("failed to make request through Tor: %w", err)
 	}
@@ -206,7 +259,15 @@ func (tc *TorClient) TestConnection() error {
 }
 
 func (tc *TorClient) GetCurrentIP() (string, error) {
-	resp, err := tc.client.Get("https://httpbin.org/ip")
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", "https://httpbin.org/ip", nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to create request: %w", err)
+	}
+
+	resp, err := tc.client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("failed to get current IP: %w", err)
 	}

@@ -37,21 +37,31 @@ func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExt
 		colly.AllowURLRevisit(),
 		colly.Async(true),
 		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
+		// colly.Debugger(&debug.LogDebugger{}),
 	)
 
 	if torClient != nil {
 		transport := &http.Transport{
-			DialContext: torClient.GetDialContext(),
+			DialContext:           torClient.GetDialContextWithRetry(3, 3*time.Second),
+			DisableKeepAlives:     true,
+			MaxIdleConns:          0,
+			MaxIdleConnsPerHost:   0,
+			MaxConnsPerHost:       2, // Allow 2 concurrent connections
+			IdleConnTimeout:       0,
+			ResponseHeaderTimeout: 180 * time.Second, // 3 minutes for slow responses
+			TLSHandshakeTimeout:   60 * time.Second,
 		}
 
 		c.WithTransport(transport)
 		log.Println("Colly configured to use Tor proxy")
 	}
 
+	c.SetRequestTimeout(300 * time.Second) // 5 minutes total timeout
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 2,               // Reduced parallelism when using Tor to be more conservative
-		Delay:       2 * time.Second, // Add delay between requests to be respectful
+		Parallelism: 1,               // Single request at a time to be respectful
+		Delay:       5 * time.Second, // Longer delay between requests
+		RandomDelay: 2 * time.Second, // Add random delay
 	})
 
 	worker := &Worker{
@@ -60,7 +70,7 @@ func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExt
 		crawlVectorRepo: crawlVectorRepo,
 		extractor:       extractor,
 		visitedURL:      make(map[string]int),
-		maxURLVisits:    5,
+		maxURLVisits:    3,
 		downloadManager: NewDownloadManager(torClient),
 		torClient:       torClient,
 	}
@@ -100,7 +110,6 @@ func (w *Worker) isValidDownloadURL(rawURL string) bool {
 	}
 	for param := range u.Query() {
 		if !allowedParams[param] {
-			log.Printf("[URL_VALIDATION] Invalid query parameter: %s in URL: %s", param, rawURL)
 			return false
 		}
 	}
@@ -146,7 +155,6 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 			return
 		}
 		if !w.isValidDownloadURL(absoluteURL) {
-			log.Printf("[URL_VALIDATION] Invalid download URL: %s", absoluteURL)
 			return
 		}
 
@@ -163,11 +171,35 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 	})
 
 	w.collector.OnError(func(r *colly.Response, err error) {
+		if r == nil {
+			log.Printf("[HTTP_ERROR] Request failed: %v", err)
+			return
+		}
+
 		log.Printf("[HTTP_ERROR] URL: %s - Status: %d - Error: %v", r.Request.URL, r.StatusCode, err)
+
+		// Check if it's a timeout error
+		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded") {
+			log.Printf("[TIMEOUT] Timeout occurred for URL: %s. This may be due to Tor network latency or slow server response.", r.Request.URL)
+			log.Printf("[TOR] Consider rotating IP if timeouts persist")
+		}
+
+		// Check for specific HTTP errors
+		if r.StatusCode == 429 {
+			log.Printf("[RATE_LIMIT] Rate limited by server: %s", r.Request.URL)
+			// Consider longer delays
+		} else if r.StatusCode >= 500 {
+			log.Printf("[SERVER_ERROR] Server error for URL: %s", r.Request.URL)
+		}
 	})
 
 	w.collector.OnResponse(func(r *colly.Response) {
 		log.Printf("[RESPONSE] URL: %s - Status: %d - Size: %d bytes", r.Request.URL.String(), r.StatusCode, len(r.Body))
+
+		// Log response headers for debugging
+		contentType := r.Headers.Get("Content-Type")
+		contentLength := r.Headers.Get("Content-Length")
+		log.Printf("[RESPONSE_HEADERS] Content-Type: %s, Content-Length: %s", contentType, contentLength)
 
 		if !w.isDownloadResponse(r) {
 			return
