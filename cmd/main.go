@@ -13,7 +13,6 @@ import (
 	"axora/pkg/chunking"
 	"axora/pkg/embedding"
 	qdrantClient "axora/pkg/qdrantdb"
-	"axora/pkg/tor"
 	"axora/search"
 )
 
@@ -36,20 +35,6 @@ func main() {
 	}
 
 	// ==========
-	// TOR CLIENT
-	// ==========
-	torClient, err := tor.NewTorClient(cfg.TorProxyURL)
-	if err != nil {
-		log.Fatalf("Failed to initialize Tor client: %v", err)
-	}
-
-	if err := torClient.TestConnection(); err != nil {
-		log.Printf("Warning: Tor connection test failed: %v", err)
-	} else {
-		log.Println("Tor connection established successfully")
-	}
-
-	// ==========
 	// OTHER SERVICES
 	// ==========
 	extractor := crawler.NewContentExtractor()
@@ -60,7 +45,7 @@ func main() {
 	// ==========
 	// Crawler worker
 	// ==========
-	worker := crawler.NewWorker(qdb, extractor, recurCharChunking, torClient)
+	worker := crawler.NewWorker(qdb, extractor, recurCharChunking)
 
 	// ==========
 	// HTTP

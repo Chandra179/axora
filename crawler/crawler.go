@@ -2,18 +2,22 @@ package crawler
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"axora/pkg/chunking"
-	"axora/pkg/tor"
 	"axora/repository"
 
 	"github.com/gocolly/colly/v2"
+	"golang.org/x/net/proxy"
 )
 
 type Worker struct {
@@ -24,44 +28,30 @@ type Worker struct {
 	visitedURL      map[string]int
 	maxURLVisits    int
 	mutex           sync.RWMutex
-	downloadManager *DownloadManager
-	torClient       *tor.TorClient
+	httpClient      http.Client
 }
 
 func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExtractor,
-	chunker chunking.ChunkingClient, torClient *tor.TorClient) *Worker {
+	chunker chunking.ChunkingClient) *Worker {
+
+	dialer, _ := proxy.SOCKS5("tcp", "axora-tor:9050", nil, proxy.Direct)
+	transport := &http.Transport{Dial: dialer.Dial}
+	client := &http.Client{Transport: transport}
 
 	c := colly.NewCollector(
 		colly.UserAgent("Axora-Crawler/1.0"),
 		colly.MaxDepth(3),
 		colly.AllowURLRevisit(),
 		colly.Async(true),
-		colly.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"),
 		// colly.Debugger(&debug.LogDebugger{}),
 	)
-
-	if torClient != nil {
-		transport := &http.Transport{
-			DialContext:           torClient.GetDialContextWithRetry(3, 3*time.Second),
-			DisableKeepAlives:     true,
-			MaxIdleConns:          0,
-			MaxIdleConnsPerHost:   0,
-			MaxConnsPerHost:       2, // Allow 2 concurrent connections
-			IdleConnTimeout:       0,
-			ResponseHeaderTimeout: 180 * time.Second, // 3 minutes for slow responses
-			TLSHandshakeTimeout:   60 * time.Second,
-		}
-
-		c.WithTransport(transport)
-		log.Println("Colly configured to use Tor proxy")
-	}
-
-	c.SetRequestTimeout(300 * time.Second) // 5 minutes total timeout
+	c.WithTransport(transport)
+	c.SetClient(client)
+	c.SetRequestTimeout(300 * time.Second)
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 1,               // Single request at a time to be respectful
-		Delay:       5 * time.Second, // Longer delay between requests
-		RandomDelay: 2 * time.Second, // Add random delay
+		Parallelism: 1,
+		Delay:       5 * time.Second,
 	})
 
 	worker := &Worker{
@@ -71,8 +61,7 @@ func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExt
 		extractor:       extractor,
 		visitedURL:      make(map[string]int),
 		maxURLVisits:    3,
-		downloadManager: NewDownloadManager(torClient),
-		torClient:       torClient,
+		httpClient:      *client,
 	}
 
 	return worker
@@ -115,22 +104,6 @@ func (w *Worker) isValidDownloadURL(rawURL string) bool {
 	}
 
 	return true
-}
-
-// isDownloadResponse checks if the response is a download
-func (w *Worker) isDownloadResponse(r *colly.Response) bool {
-	contentDisposition := r.Headers.Get("Content-Disposition")
-	contentType := r.Headers.Get("Content-Type")
-
-	if strings.Contains(strings.ToLower(contentDisposition), "attachment") {
-		return true
-	}
-
-	if contentType == "application/octet-stream" {
-		return true
-	}
-
-	return false
 }
 
 func (w *Worker) Crawl(ctx context.Context, urls []string) {
@@ -178,16 +151,13 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 
 		log.Printf("[HTTP_ERROR] URL: %s - Status: %d - Error: %v", r.Request.URL, r.StatusCode, err)
 
-		// Check if it's a timeout error
 		if strings.Contains(err.Error(), "timeout") || strings.Contains(err.Error(), "deadline exceeded") {
 			log.Printf("[TIMEOUT] Timeout occurred for URL: %s. This may be due to Tor network latency or slow server response.", r.Request.URL)
 			log.Printf("[TOR] Consider rotating IP if timeouts persist")
 		}
 
-		// Check for specific HTTP errors
 		if r.StatusCode == 429 {
 			log.Printf("[RATE_LIMIT] Rate limited by server: %s", r.Request.URL)
-			// Consider longer delays
 		} else if r.StatusCode >= 500 {
 			log.Printf("[SERVER_ERROR] Server error for URL: %s", r.Request.URL)
 		}
@@ -196,29 +166,36 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 	w.collector.OnResponse(func(r *colly.Response) {
 		log.Printf("[RESPONSE] URL: %s - Status: %d - Size: %d bytes", r.Request.URL.String(), r.StatusCode, len(r.Body))
 
-		// Log response headers for debugging
 		contentType := r.Headers.Get("Content-Type")
 		contentLength := r.Headers.Get("Content-Length")
+		contentDisposition := r.Headers.Get("Content-Disposition")
+
 		log.Printf("[RESPONSE_HEADERS] Content-Type: %s, Content-Length: %s", contentType, contentLength)
 
-		if !w.isDownloadResponse(r) {
+		if !strings.Contains(strings.ToLower(contentDisposition), "attachment") {
 			return
 		}
-
-		rurl := r.Request.URL.String()
-		log.Printf("[DOWNLOAD] Download detected for URL: %s", rurl)
-		u, _ := url.Parse(rurl)
-		expectedMD5 := u.Query().Get("md5")
-		filename := "download_" + strings.ReplaceAll(rurl, "/", "_")
-
-		go func() {
-			err := w.downloadManager.Download(rurl, filename, expectedMD5)
-			if err != nil {
-				log.Printf("[DOWNLOAD] Failed to download %s: %v", rurl, err)
-			} else {
-				log.Printf("[DOWNLOAD] Successfully downloaded: %s", filename)
+		if contentType != "application/octet-stream" {
+			return
+		}
+		filename := "download.bin"
+		if strings.Contains(contentDisposition, "filename=") {
+			parts := strings.Split(contentDisposition, "filename=")
+			if len(parts) > 1 {
+				filename = strings.Trim(parts[1], "\"")
 			}
-		}()
+		}
+
+		u := r.Request.URL
+		q := u.Query()
+		md5hash := q.Get("md5")
+		savePath := filepath.Join("./downloads", filename)
+		err := w.downloadFile(u.String(), savePath)
+		if err != nil {
+			log.Printf("[DOWNLOAD_ERROR] %s -> %v", filename, err)
+		} else {
+			log.Printf("[DOWNLOAD_SUCCESS] Saved %s (md5=%s)", savePath, md5hash)
+		}
 	})
 
 	for _, url := range urls {
@@ -229,4 +206,33 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 	}
 
 	w.collector.Wait()
+}
+
+func (w *Worker) downloadFile(url, savePath string) error {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+
+	// IMPORTANT: Don't add Range header, let server send full file
+	req.Header.Set("User-Agent", "GoDownloader/1.0")
+
+	resp, err := w.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("server returned status %d", resp.StatusCode)
+	}
+
+	out, err := os.Create(savePath)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, resp.Body)
+	return err
 }
