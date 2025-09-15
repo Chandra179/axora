@@ -1,32 +1,21 @@
 # Axora
-An intelligent web crawler that uses semantic similarity to filter relevant content based on search queries. Axora combines traditional web crawling with modern NLP techniques to collect and store only the most relevant web content.
+Data ready for LLMs by keywords
 
-## Crawl
-![Architecture](arch.png)
+## Crawl & Scrape
+1. Recursively find every link a[href] in the page
+2. Constraint: only visits link that inlcude defined (params, path), https only
+3. URL visits counter: count every URLs visits because every visited URLs could contain a[href] URLs that already visited 
+4. Retry: retry on http response error
+5. On HTTP response call `DownloadManager` if the HTTP content is downloadable (application/octet-stream, attachment, etc...)
 
-## URL Validation
-All links must be carefully validated before downloading. The domain must match the user’s request, and only **HTTPS** is allowed.  
-- The path is restricted to `index.php`, `edition.php`, `ads.php`, or `get.php`, 
-- and only specific query parameters are accepted: `req`, `id`, `md5`, and `downloadname`.  
-- Always validate the full URL (host + path + params) before making a request.  
-- For `get.php` redirects, the MD5 in the redirect must match the MD5 in the original request. The redirect URL must match the strict pattern `https://cdn[1..n].booksdl.lc/get.php`, where only the number after `cdn` can vary.  
-
-- when it got redirects (307)   , we need to check:  
-- `Content-Disposition` should contain `attachment` with a valid filename.  
-- `Content-Range` must not be zero, ensuring actual data is sent.  
-- `Content-Type` must be a supported downloadable type (currently only `application/octet-stream`).  
-
-## Download Manager
-1. After validation passes, the download begins. Files should be fetched in chunks using the HTTP `Range` header, and each chunk is written directly to disk as it arrives. 
-2. The manager must track the last byte saved so downloads can be paused and resumed from that exact point.  
-3. If resuming, the next request should start from the last saved offset onward. Once the download completes, the file’s MD5 checksum must be verified against the expected value to ensure integrity.  
-4. Optionally, the file can be split into multiple byte ranges and downloaded in parallel threads, then merged afterward to improve speed.  
+## Data Provider
+libgen
 
 ## Tor
-docker run --rm osminogin/tor-simple tor --hash-password "test12345"
+1. Register Tor as Proxy client for colly
+2. [TBD] IP rotation (every n req, 429, 503, 403)
 
-## Other
-ex libgen.io, libgen.org, alternative domains: *.lc, *.li, *.gs, *.vg, *.la, *.bz, *.gl
-https://libgen.li/get.php?md5=5e4a98758351903d7412aa5c8cb3aa04&key=8PHX233W8SIWSCEX
-https://cdn3.booksdl.lc/get.php?md5=5e4a98758351903d7412aa5c8cb3aa04&key=8PHX233W8SIWSCEX
-
+## Download Manager
+1. downlaod files using proxy ([NOT] do not open the downloaded file while still using TOR, it might exposed your IP)
+2. support partial download for (pause, resume download), by content-range 
+3. verify md5 hash
