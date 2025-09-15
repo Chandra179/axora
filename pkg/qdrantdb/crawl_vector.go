@@ -25,19 +25,11 @@ func (c *CrawlClient) CreateCrawlCollection(ctx context.Context) error {
 	err = c.Client.CreateCollection(ctx, &qdrant.CreateCollection{
 		CollectionName: CrawlCollectionName,
 		VectorsConfig: qdrant.NewVectorsConfig(&qdrant.VectorParams{
-			Size:     768, // Adjust based on your embedding dimension
+			Size:     768,
 			Distance: qdrant.Distance_Cosine,
 		}),
 	})
-	if err != nil {
-		return fmt.Errorf("err create crawl collection: %w", err)
-	}
 
-	_, err = c.Client.CreateFieldIndex(ctx, &qdrant.CreateFieldIndexCollection{
-		CollectionName: CrawlCollectionName,
-		FieldName:      "content_hash",
-		FieldType:      qdrant.FieldType_FieldTypeKeyword.Enum(),
-	})
 	if err != nil {
 		return fmt.Errorf("err create content_hash index: %w", err)
 	}
@@ -45,6 +37,8 @@ func (c *CrawlClient) CreateCrawlCollection(ctx context.Context) error {
 }
 
 func (c *CrawlClient) InsertOne(ctx context.Context, doc *repository.CrawlVectorDoc) error {
+	// Using content hash as PK, bcs QdrantDB only accepts UUID and num as PK
+	// so we need to convert the hash to UUID
 	hash := sha256.Sum256([]byte(doc.Content))
 	hashBytes := hash[:16]
 	namespace := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")

@@ -29,11 +29,11 @@ type Worker struct {
 	maxURLVisits    int
 	mutex           sync.RWMutex
 	httpClient      http.Client
+	downloadPath    string
 }
 
 // getPublicIP makes a request to check the current public IP being used
 func (w *Worker) getPublicIP() string {
-	// Try multiple IP checking services
 	services := []string{
 		"https://httpbin.org/ip",
 		"https://api.ipify.org?format=text",
@@ -87,9 +87,9 @@ func (w *Worker) getPublicIP() string {
 }
 
 func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExtractor,
-	chunker chunking.ChunkingClient) *Worker {
+	chunker chunking.ChunkingClient, torProxyUrl string, downloadPath string) *Worker {
 
-	dialer, _ := proxy.SOCKS5("tcp", "axora-tor:9050", nil, proxy.Direct)
+	dialer, _ := proxy.SOCKS5("tcp", torProxyUrl, nil, proxy.Direct)
 	transport := &http.Transport{Dial: dialer.Dial}
 	client := &http.Client{Transport: transport}
 
@@ -106,7 +106,7 @@ func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExt
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
 		Parallelism: 1,
-		Delay:       5 * time.Second,
+		Delay:       3 * time.Second,
 	})
 
 	worker := &Worker{
@@ -117,10 +117,10 @@ func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExt
 		visitedURL:      make(map[string]int),
 		maxURLVisits:    3,
 		httpClient:      *client,
+		downloadPath:    downloadPath,
 	}
 
-	// Check and log the current IP being used
-	log.Printf("[WORKER_INIT] Initializing worker with Tor proxy (axora-tor:9050)")
+	log.Print("[WORKER_INIT] Initializing worker with Tor proxy: " + torProxyUrl)
 	currentIP := worker.getPublicIP()
 	log.Printf("[WORKER_INIT] Worker initialized - Using IP: %s", currentIP)
 
@@ -128,12 +128,7 @@ func NewWorker(crawlVectorRepo repository.CrawlVectorRepo, extractor *ContentExt
 }
 
 // isValidDownloadURL validates URL according to the specification
-func (w *Worker) isValidDownloadURL(rawURL string) bool {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return false
-	}
-
+func (w *Worker) isValidDownloadURL(u *url.URL) bool {
 	if u.Scheme != "https" {
 		return false
 	}
@@ -167,7 +162,6 @@ func (w *Worker) isValidDownloadURL(rawURL string) bool {
 }
 
 func (w *Worker) Crawl(ctx context.Context, urls []string) {
-	// Check IP before starting crawl
 	currentIP := w.getPublicIP()
 	log.Printf("[CRAWL_START] Starting crawl with IP: %s", currentIP)
 
@@ -175,7 +169,6 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 		w.mutex.Lock()
 		defer w.mutex.Unlock()
 		w.visitedURL[r.URL.String()]++
-		log.Printf("[REQUEST] Visiting: %s (visit count: %d) [IP: %s]", r.URL.String(), w.visitedURL[r.URL.String()], currentIP)
 	})
 
 	w.collector.OnHTML("a[href]", func(e *colly.HTMLElement) {
@@ -191,7 +184,7 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 		if u.Host == "" {
 			return
 		}
-		if !w.isValidDownloadURL(absoluteURL) {
+		if !w.isValidDownloadURL(u) {
 			return
 		}
 
@@ -216,15 +209,14 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 		log.Printf("[HTTP_ERROR] URL: %s - Status: %d - Error: %v [IP: %s]", r.Request.URL, r.StatusCode, err, currentIP)
 
 		if r.StatusCode >= 500 || r.StatusCode == 0 {
-			retryCount := r.Request.Ctx.GetAny("retryCount")
+			retryCount := r.Ctx.GetAny("retryCount")
 			if retryCount == nil {
 				r.Ctx.Put("retryCount", 1)
 			}
 			rc := r.Ctx.GetAny("retryCount").(int)
 			if rc < 3 {
-				log.Printf("[RETRY] 502 from %s, retry %d/3 [IP: %s]", r.Request.URL, rc+1, currentIP)
+				log.Printf("[RETRY] from %s, retry %d/3 [IP: %s]", r.Request.URL, rc+1, currentIP)
 
-				// clone context with incremented retry count
 				r.Ctx.Put("retryCount", rc+1)
 
 				time.Sleep(time.Duration(rc+1) * time.Second) // backoff
@@ -242,10 +234,7 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 		log.Printf("[RESPONSE] URL: %s - Status: %d - Size: %d bytes [IP: %s]", r.Request.URL.String(), r.StatusCode, len(r.Body), currentIP)
 
 		contentType := r.Headers.Get("Content-Type")
-		contentLength := r.Headers.Get("Content-Length")
 		contentDisposition := r.Headers.Get("Content-Disposition")
-
-		log.Printf("[RESPONSE_HEADERS] Content-Type: %s, Content-Length: %s [IP: %s]", contentType, contentLength, currentIP)
 
 		if !strings.Contains(strings.ToLower(contentDisposition), "attachment") {
 			return
@@ -253,29 +242,29 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) {
 		if contentType != "application/octet-stream" {
 			return
 		}
-		filename := "download.bin"
-		if strings.Contains(contentDisposition, "filename=") {
-			parts := strings.Split(contentDisposition, "filename=")
-			if len(parts) > 1 {
-				filename = strings.Trim(parts[1], "\"")
+
+		go func() {
+			fname := "download.bin"
+			if strings.Contains(contentDisposition, "filename=") {
+				parts := strings.Split(contentDisposition, "filename=")
+				if len(parts) > 1 {
+					fname = strings.Trim(parts[1], "\"")
+				}
 			}
-		}
+			u := r.Request.URL
+			q := u.Query()
+			md5hash := q.Get("md5")
+			savePath := filepath.Join(w.downloadPath, fname)
 
-		u := r.Request.URL
-		q := u.Query()
-		md5hash := q.Get("md5")
-		savePath := filepath.Join("/app/downloads", filename)
-
-		go func(url, path, fname, hash string) {
 			log.Printf("[DOWNLOAD_START] Starting download: %s [IP: %s]", fname, currentIP)
 			err := w.downloadFile(u.String(), savePath)
 			if err != nil {
-				log.Printf("[DOWNLOAD_ERROR] %s -> %v [IP: %s]", filename, err, currentIP)
+				log.Printf("[DOWNLOAD_ERROR] %s -> %v [IP: %s]", fname, err, currentIP)
 			} else {
 				log.Printf("[DOWNLOAD_SUCCESS] Saved %s (md5=%s) [IP: %s]", savePath, md5hash, currentIP)
 			}
 
-		}(u.String(), savePath, filename, md5hash)
+		}()
 	})
 
 	for _, url := range urls {

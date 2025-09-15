@@ -1,18 +1,4 @@
-# POST http://localhost:8080/search
-# Content-Type: application/json
-
-# {
-#   "query": "Artificial Intelligence, tokenization, embedding, neural networks, deep learning, machine learning, ai agent, transfer learning, nlp, fine tuning, multimodal AI, natural language processing, gradient descent, backpropagation, self attention, transformers",
-#   "crawl_type": "keywords"
-# }
-
-POST http://localhost:8080/search
-Content-Type: application/json
-
-{
-  "query": "introduction to neural networks",
-  "crawl_type": "semantic"
-}
+GET http://localhost:8080/scrap?q=neural%20networks
 
 curl -X POST \
   -H "Content-Type: application/json" \

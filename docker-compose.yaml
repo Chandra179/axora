@@ -40,21 +40,21 @@ services:
       dockerfile: Dockerfile
     container_name: axora-crawler
     environment:
-      APP_PORT: ${APP_PORT}
+      APP_PORT: 8080
       SERP_API_KEY: ${SERP_API_KEY}
       QDRANT_HTTP_PORT: ${QDRANT_HTTP_PORT}
       QDRANT_GRPC_PORT: ${QDRANT_GRPC_PORT}
       QDRANT_HOST: ${QDRANT_HOST}
       MPNETBASEV2_URL: ${MPNETBASEV2_URL}
       CHUNKING_URL: ${CHUNKING_URL}
-      TOR_PROXY_URL: socks5://axora-tor:9050
+      TOR_PROXY_URL: ${TOR_PROXY_URL}
       DOCKER_BUILDKIT: 1
     ports:
-      - "${APP_PORT}:8080"
+      - "8080:8080"
     volumes:
-      - ./downloads:/app/downloads
+      - ./downloads:${DOWNLOAD_PATH}
     networks:
-      - axora-network 
+      - axora-network
     depends_on:
       axora-mpnetbasev2:
         condition: service_healthy
@@ -76,8 +76,8 @@ services:
     volumes:
       - qdrant_storage:/qdrant/storage
     environment:
-      - QDRANT__SERVICE__HTTP_PORT=6333
-      - QDRANT__SERVICE__GRPC_PORT=6334
+      - QDRANT__SERVICE__HTTP_PORT=${QDRANT_HTTP_PORT}
+      - QDRANT__SERVICE__GRPC_PORT=${QDRANT_GRPC_PORT}
     networks:
       - axora-network
 
@@ -110,8 +110,8 @@ services:
     networks:
       - axora-network
     ports:
-      - "9050:9050" # SOCKS5 proxy
-      - "9051:9051" # Control port (optional, for NEWNYM)
+      - "9050:9050"
+      - "9051:9051"
 
 volumes:
   qdrant_storage:
