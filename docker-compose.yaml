@@ -52,7 +52,7 @@ services:
     ports:
       - "${APP_PORT}:8080"
     volumes:
-      - ./downloads:/downloads
+      - ./downloads:/app/downloads
     networks:
       - axora-network 
     depends_on:
@@ -116,7 +116,6 @@ services:
 volumes:
   qdrant_storage:
   axora-mpnetbasev2-cache:
-  tor_data:
 
 networks:
   axora-network:

@@ -12,3 +12,6 @@ nocache:
 
 debug:
 	docker compose -f docker-compose.yaml up --build
+
+sh:
+	docker exec -it axora-crawler /bin/sh
