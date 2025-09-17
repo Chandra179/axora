@@ -41,13 +41,13 @@ services:
     container_name: axora-crawler
     environment:
       APP_PORT: 8080
-      SERP_API_KEY: ${SERP_API_KEY}
       QDRANT_HTTP_PORT: ${QDRANT_HTTP_PORT}
       QDRANT_GRPC_PORT: ${QDRANT_GRPC_PORT}
       QDRANT_HOST: ${QDRANT_HOST}
       MPNETBASEV2_URL: ${MPNETBASEV2_URL}
       CHUNKING_URL: ${CHUNKING_URL}
       TOR_PROXY_URL: ${TOR_PROXY_URL}
+      DOWNLOAD_PATH: ${DOWNLOAD_PATH}
       DOCKER_BUILDKIT: 1
     ports:
       - "8080:8080"

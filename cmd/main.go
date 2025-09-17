@@ -13,6 +13,8 @@ import (
 	"axora/pkg/chunking"
 	"axora/pkg/embedding"
 	qdrantClient "axora/pkg/qdrantdb"
+
+	"go.uber.org/zap"
 )
 
 func main() {
@@ -43,7 +45,19 @@ func main() {
 	// ==========
 	// Crawler worker
 	// ==========
-	worker := crawler.NewWorker(qdb, extractor, recurCharChunking, cfg.TorProxyURL, cfg.DownloadPath)
+	logger, _ := zap.NewProduction()
+	worker, err := crawler.NewWorker(
+		qdb,
+		extractor,
+		recurCharChunking,
+		cfg.TorProxyURL,
+		cfg.DownloadPath,
+		logger,
+		nil,
+	)
+	if err != nil {
+		logger.Fatal("Failed to create worker", zap.Error(err))
+	}
 
 	// ==========
 	// HTTP
@@ -61,6 +75,6 @@ func Crawl(worker *crawler.Worker, embed embedding.Client) http.HandlerFunc {
 			http.Error(w, "missing q parameter", http.StatusBadRequest)
 			return
 		}
-		worker.Crawl(context.Background(), []string{query})
+		worker.Crawl(context.Background(), []string{"https://libgen.li/index.php?req=" + query})
 	}
 }

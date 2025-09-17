@@ -9,7 +9,6 @@ import (
 type Config struct {
 	AppPort int
 
-	SerpApiKey       string
 	AllMinilmL6V2URL string
 
 	QdrantHost string
@@ -35,7 +34,6 @@ func Load() (*Config, error) {
 	return &Config{
 		AppPort: appPort,
 
-		SerpApiKey:       getEnv("SERP_API_KEY"),
 		AllMinilmL6V2URL: getEnv("MPNETBASEV2_URL"),
 
 		QdrantPort: qdrantPort,

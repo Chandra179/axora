@@ -8,6 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/qdrant/go-client v1.15.2
 	github.com/tmc/langchaingo v0.1.13
+	go.uber.org/zap v1.27.0
 	golang.org/x/net v0.44.0
 )
 
@@ -42,6 +43,7 @@ require (
 	gitlab.com/golang-commonmark/puny v0.0.0-20191124015043-9f83538fa04f // indirect
 	go.opentelemetry.io/otel v1.35.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.35.0 // indirect
+	go.uber.org/multierr v1.10.0 // indirect
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/text v0.29.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
