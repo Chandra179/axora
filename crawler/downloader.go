@@ -18,44 +18,24 @@ import (
 
 const maxFilenameLength = 100
 
-type FileDownloader struct {
-	httpClient   http.Client
-	downloadPath string
-	logger       *zap.Logger
-	ipChecker    *IPChecker
-}
-
-// NewFileDownloader creates a new file downloader
-func NewFileDownloader(client http.Client, downloadPath string, ipChecker *IPChecker, logger *zap.Logger) *FileDownloader {
-	return &FileDownloader{
-		httpClient:   client,
-		downloadPath: downloadPath,
-		ipChecker:    ipChecker,
-		logger:       logger,
-	}
-}
-
 // DownloadFile downloads a file from the given URL to the specified path
-func (d *FileDownloader) DownloadFile(ctx context.Context, url, filename, expectedMD5 string) error {
+func (w *Worker) DownloadFile(ctx context.Context, url, filename, expectedMD5 string) error {
 	if expectedMD5 == "" {
 		return nil
 	}
 
-	savePath := filepath.Join(d.downloadPath, filename)
+	savePath := filepath.Join(w.downloadPath, filename)
 	if _, err := os.Stat(savePath); err == nil {
-		if err := d.ValidateDownload(savePath, expectedMD5); err == nil {
-			d.logger.Info("File already exists and is valid, skipping download",
+		if err := w.ValidateDownload(savePath, expectedMD5); err == nil {
+			w.logger.Info("File already exists and is valid, skipping download",
 				zap.String("save_path", savePath))
 			return nil
 		}
 	}
 
-	var currentIP string
-	if d.ipChecker != nil {
-		currentIP = d.ipChecker.GetPublicIP(ctx)
-	}
+	currentIP := w.GetPublicIP(ctx)
 
-	d.logger.Info("Starting file download",
+	w.logger.Info("Starting file download",
 		zap.String("url", url),
 		zap.String("save_path", savePath),
 		zap.String("expected_md5", expectedMD5),
@@ -73,9 +53,9 @@ func (d *FileDownloader) DownloadFile(ctx context.Context, url, filename, expect
 	}
 	req.Header.Set("User-Agent", "GoDownloader/1.0")
 
-	resp, err := d.httpClient.Do(req)
+	resp, err := w.httpClient.Do(req)
 	if err != nil {
-		d.logger.Error("HTTP request failed", zap.Error(err))
+		w.logger.Error("HTTP request failed", zap.Error(err))
 		return err
 	}
 	defer resp.Body.Close()
@@ -95,22 +75,22 @@ func (d *FileDownloader) DownloadFile(ctx context.Context, url, filename, expect
 		return fmt.Errorf("copy error: %w", err)
 	}
 
-	d.logger.Info("File download completed",
+	w.logger.Info("File download completed",
 		zap.String("save_path", savePath))
 
-	if err := d.ValidateDownload(savePath, expectedMD5); err != nil {
+	if err := w.ValidateDownload(savePath, expectedMD5); err != nil {
 		os.Remove(savePath)
 		return err
 	}
 
-	d.logger.Info("MD5 verification successful",
+	w.logger.Info("MD5 verification successful",
 		zap.String("md5", expectedMD5))
 
 	return nil
 }
 
 // ValidateDownload verifies the MD5 hash of a downloaded file
-func (d *FileDownloader) ValidateDownload(filePath, expectedMD5 string) error {
+func (w *Worker) ValidateDownload(filePath, expectedMD5 string) error {
 	if expectedMD5 == "" {
 		return errors.New("md5 required: " + expectedMD5)
 	}

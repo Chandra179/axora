@@ -110,14 +110,22 @@ services:
     container_name: axora-tor
     volumes:
       - ./torrc:/etc/tor/torrc:ro
-    environment:
-      # Enable control port without password
-      - TOR_OPTS=--ControlPort 9051 --ControlListenAddress 0.0.0.0:9051 --HashedControlPassword ""
     networks:
       - axora-network
     ports:
       - "9050:9050"
-      - "9051:9051"
+  
+  axora-tor-proxy:
+    image: alpine/socat
+    container_name: axora-tor-proxy
+    command: ["TCP-LISTEN:9051,reuseaddr,fork,bind=0.0.0.0", "TCP:axora-tor:9051"]
+    networks:
+      - axora-network
+    ports:
+      - "127.0.0.1:9051:9051"   # expose only to host loopback
+    depends_on:
+      - axora-tor
+
 
 volumes:
   qdrant_storage:

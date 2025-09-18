@@ -105,7 +105,7 @@ func (w *Worker) OnResponse(ctx context.Context) colly.ResponseCallback {
 			q := u.Query()
 			md5hash := q.Get("md5")
 
-			err := w.downloader.DownloadFile(ctx, u.String(), filename, md5hash)
+			err := w.DownloadFile(ctx, u.String(), filename, md5hash)
 			if err != nil {
 				w.logger.Error("Download failed",
 					zap.String("filename", filename),

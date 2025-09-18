@@ -1,14 +1,16 @@
 package crawler
 
 import (
-	"bufio"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"net"
 	"net/http"
+	"net/textproto"
+	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"axora/pkg/chunking"
@@ -31,14 +33,18 @@ type Worker struct {
 	chunker         chunking.ChunkingClient
 	crawlVectorRepo repository.CrawlVectorRepo
 	extractor       *ContentExtractor
-	downloader      *FileDownloader
 	validator       *URLValidator
-	ipChecker       *IPChecker
 	visitTracker    *VisitTracker
 	config          *CrawlerConfig
 	logger          *zap.Logger
 	maxRetries      int
 	torControlURL   string
+	httpClient      http.Client
+	downloadPath    string
+	iPCheckServices []string
+	torProxyUrl     string
+	transport       *http.Transport
+	mu              sync.Mutex
 }
 
 // NewWorker creates a new crawler worker with all dependencies
@@ -61,13 +67,14 @@ func NewWorker(
 		return nil, err
 	}
 
-	transport := &http.Transport{Dial: dialer.Dial}
+	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return dialer.Dial(network, addr)
+	}
+	transport := &http.Transport{DialContext: dialContext, DisableKeepAlives: false}
 	client := &http.Client{Transport: transport}
 
-	ipChecker := NewIPChecker(*client, config.IPCheckServices, logger)
 	validator := NewURLValidator(config)
 	visitTracker := NewVisitTracker(config.MaxURLVisits)
-	downloader := NewFileDownloader(*client, downloadPath, ipChecker, logger)
 
 	c := colly.NewCollector(
 		colly.UserAgent(config.UserAgent),
@@ -88,14 +95,17 @@ func NewWorker(
 		chunker:         chunker,
 		crawlVectorRepo: crawlVectorRepo,
 		extractor:       extractor,
-		downloader:      downloader,
 		validator:       validator,
-		ipChecker:       ipChecker,
 		visitTracker:    visitTracker,
 		config:          config,
 		logger:          logger,
 		maxRetries:      1,
 		torControlURL:   torControlURL,
+		httpClient:      *client,
+		downloadPath:    downloadPath,
+		iPCheckServices: config.IPCheckServices,
+		torProxyUrl:     torProxyUrl,
+		transport:       transport,
 	}
 
 	return worker, nil
@@ -104,7 +114,7 @@ func NewWorker(
 // Crawl starts crawling the provided URLs
 func (w *Worker) Crawl(ctx context.Context, urls []string) error {
 	contextId := GenerateContextID()
-	ip := w.ipChecker.GetPublicIP(ctx)
+	ip := w.GetPublicIP(ctx)
 	ctx = context.WithValue(ctx, ContextIDKey, contextId)
 	ctx = context.WithValue(ctx, IPKey, ip)
 
@@ -113,8 +123,11 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) error {
 		zap.String(string(IPKey), ip),
 	)
 
-	w.setupEventHandlers(ctx)
+	fmt.Println("ip 1: ", ip)
 	w.RotateIP()
+	time.Sleep(60 * time.Second)
+	fmt.Println("ip 2: ", w.GetPublicIP(ctx))
+	w.setupEventHandlers(ctx)
 	for _, urlStr := range urls {
 		if err := w.collector.Visit(urlStr); err != nil {
 			w.logger.Error("Failed to visit URL",
@@ -140,60 +153,91 @@ func (w *Worker) setupEventHandlers(ctx context.Context) {
 }
 
 func (w *Worker) RotateIP() error {
-	conn, err := net.Dial("tcp", w.torControlURL)
+	w.logger.Info("Dialing Tor control port: " + w.torControlURL)
+	conn, err := net.DialTimeout("tcp", w.torControlURL, 30*time.Second)
 	if err != nil {
-		w.logger.Error("failed to connect to tor control port", zap.Error(err))
-		return fmt.Errorf("failed to connect to tor control port: %w", err)
+		w.logger.Error("Failed to dial Tor control port: " + err.Error())
+		return err
 	}
-	defer conn.Close()
+	defer func() {
+		w.logger.Info("Closing Tor control connection")
+		conn.Close()
+	}()
 
-	// Set connection timeout
-	conn.SetDeadline(time.Now().Add(30 * time.Second))
+	w.logger.Info("Wrapping control connection in textproto")
+	tp := textproto.NewConn(conn)
+	defer func() {
+		w.logger.Info("Closing textproto connection")
+		tp.Close()
+	}()
 
-	reader := bufio.NewReader(conn)
-	writer := bufio.NewWriter(conn)
-
-	// Authenticate with no password (empty string)
-	if _, err := writer.WriteString("AUTHENTICATE \"\"\r\n"); err != nil {
-		w.logger.Error("failed to send authenticate command to tor", zap.Error(err))
-		return fmt.Errorf("failed to send authenticate command: %w", err)
+	pass := os.Getenv("myStrongPassword")
+	w.logger.Info("Sending AUTHENTICATE command to Tor")
+	if err := tp.PrintfLine(`AUTHENTICATE "%s"`, pass); err != nil {
+		w.logger.Error("Failed to send AUTHENTICATE: " + err.Error())
+		return err
 	}
-	writer.Flush()
 
-	status, err := reader.ReadString('\n')
+	line, err := tp.ReadLine()
 	if err != nil {
-		w.logger.Error("failed to read authentication status from tor", zap.Error(err))
-		return fmt.Errorf("failed to read authentication status: %w", err)
+		w.logger.Error("Error reading AUTHENTICATE response: " + err.Error())
+		return err
+	}
+	w.logger.Info("AUTHENTICATE response: " + line)
+	if !strings.HasPrefix(line, "250") {
+		return fmt.Errorf("auth failed: %s", line)
 	}
 
-	w.logger.Debug("auth response", zap.String("status", strings.TrimSpace(status)))
-
-	if !strings.HasPrefix(status, "250") {
-		w.logger.Error("failed to authenticate with tor", zap.String("status", status))
-		return fmt.Errorf("authentication failed with status: %s", strings.TrimSpace(status))
+	w.logger.Info("Sending SIGNAL NEWNYM to Tor")
+	if err := tp.PrintfLine("SIGNAL NEWNYM"); err != nil {
+		w.logger.Warn("Err creating SIGNAL NEWNYM: " + err.Error())
+		return err
 	}
 
-	// Send NEWNYM signal
-	if _, err := writer.WriteString("SIGNAL NEWNYM\r\n"); err != nil {
-		w.logger.Error("failed to send NEWNYM signal to tor", zap.Error(err))
-		return fmt.Errorf("failed to send NEWNYM signal: %w", err)
-	}
-	writer.Flush()
-
-	status, err = reader.ReadString('\n')
+	line, err = tp.ReadLine()
 	if err != nil {
-		w.logger.Error("failed to read NEWNYM status from tor", zap.Error(err))
-		return fmt.Errorf("failed to read NEWNYM status: %w", err)
+		w.logger.Error("Error reading NEWNYM response: " + err.Error())
+		return err
+	}
+	w.logger.Info("NEWNYM response: " + line)
+	if !strings.HasPrefix(line, "250") {
+		return fmt.Errorf("NEWNYM failed: %s", line)
 	}
 
-	w.logger.Debug("newnym response", zap.String("status", strings.TrimSpace(status)))
-
-	if !strings.HasPrefix(status, "250") {
-		w.logger.Error("failed to get new IP from tor", zap.String("status", status))
-		return fmt.Errorf("NEWNYM command failed with status: %s", strings.TrimSpace(status))
+	w.logger.Info("Creating SOCKS5 dialer via " + w.torProxyUrl)
+	dialer, err := proxy.SOCKS5("tcp", w.torProxyUrl, nil, proxy.Direct)
+	if err != nil {
+		w.logger.Error("Failed to create SOCKS5 dialer: " + err.Error())
+		return err
 	}
 
-	w.logger.Info("successfully rotated IP address")
+	w.logger.Info("Building new http.Transport and http.Client")
+	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return dialer.Dial(network, addr)
+	}
+
+	newTransport := &http.Transport{
+		DialContext:       dialContext,
+		DisableKeepAlives: false, // keep-alives are okay if you close idle conns on swap
+	}
+	newClient := &http.Client{
+		Transport: newTransport,
+	}
+
+	w.logger.Info("Swapping in new transport and client")
+	w.mu.Lock()
+	old := w.transport
+	w.transport = newTransport
+	w.collector.SetClient(newClient)
+	w.collector.WithTransport(newTransport)
+	w.mu.Unlock()
+
+	if old != nil {
+		w.logger.Info("Closing old idle connections")
+		old.CloseIdleConnections()
+	}
+
+	w.logger.Info("SUCCESS: Rotated IP")
 	return nil
 }
 

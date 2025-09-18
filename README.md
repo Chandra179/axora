@@ -14,6 +14,8 @@ libgen
 ## Tor
 1. Register Tor as Proxy client for colly
 2. [TBD] IP rotation (every n req, 429, 503, 403)
+3. docker inspect axora-tor | grep IPAddress
+4. socat TCP-LISTEN:9051,reuseaddr,bind=127.0.0.1,fork TCP:axora-tor:9051
 
 ## Download Manager
 1. downlaod files using proxy ([NOT] do not open the downloaded file while still using TOR, it might exposed your IP)
