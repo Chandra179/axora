@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
+	"time"
 
 	"axora/pkg/chunking"
 	"axora/repository"
@@ -112,7 +114,7 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) error {
 	)
 
 	w.setupEventHandlers(ctx)
-
+	w.RotateIP()
 	for _, urlStr := range urls {
 		if err := w.collector.Visit(urlStr); err != nil {
 			w.logger.Error("Failed to visit URL",
@@ -137,45 +139,62 @@ func (w *Worker) setupEventHandlers(ctx context.Context) {
 	w.collector.OnResponse(w.OnResponse(ctx))
 }
 
-func (w *Worker) RotateIP() {
+func (w *Worker) RotateIP() error {
 	conn, err := net.Dial("tcp", w.torControlURL)
 	if err != nil {
 		w.logger.Error("failed to connect to tor control port", zap.Error(err))
-		return
+		return fmt.Errorf("failed to connect to tor control port: %w", err)
 	}
 	defer conn.Close()
 
-	// Authenticate with no password
-	if _, err := fmt.Fprintf(conn, "AUTHENTICATE \"\"\r\n"); err != nil {
+	// Set connection timeout
+	conn.SetDeadline(time.Now().Add(30 * time.Second))
+
+	reader := bufio.NewReader(conn)
+	writer := bufio.NewWriter(conn)
+
+	// Authenticate with no password (empty string)
+	if _, err := writer.WriteString("AUTHENTICATE \"\"\r\n"); err != nil {
 		w.logger.Error("failed to send authenticate command to tor", zap.Error(err))
-		return
+		return fmt.Errorf("failed to send authenticate command: %w", err)
 	}
-	status, err := bufio.NewReader(conn).ReadString('\n')
+	writer.Flush()
+
+	status, err := reader.ReadString('\n')
 	if err != nil {
 		w.logger.Error("failed to read authentication status from tor", zap.Error(err))
-		return
+		return fmt.Errorf("failed to read authentication status: %w", err)
 	}
-	if status != "250 OK\r\n" {
+
+	w.logger.Debug("auth response", zap.String("status", strings.TrimSpace(status)))
+
+	if !strings.HasPrefix(status, "250") {
 		w.logger.Error("failed to authenticate with tor", zap.String("status", status))
-		return
+		return fmt.Errorf("authentication failed with status: %s", strings.TrimSpace(status))
 	}
 
 	// Send NEWNYM signal
-	if _, err := fmt.Fprintf(conn, "SIGNAL NEWNYM\r\n"); err != nil {
+	if _, err := writer.WriteString("SIGNAL NEWNYM\r\n"); err != nil {
 		w.logger.Error("failed to send NEWNYM signal to tor", zap.Error(err))
-		return
+		return fmt.Errorf("failed to send NEWNYM signal: %w", err)
 	}
-	status, err = bufio.NewReader(conn).ReadString('\n')
+	writer.Flush()
+
+	status, err = reader.ReadString('\n')
 	if err != nil {
 		w.logger.Error("failed to read NEWNYM status from tor", zap.Error(err))
-		return
+		return fmt.Errorf("failed to read NEWNYM status: %w", err)
 	}
-	if status != "250 OK\r\n" {
+
+	w.logger.Debug("newnym response", zap.String("status", strings.TrimSpace(status)))
+
+	if !strings.HasPrefix(status, "250") {
 		w.logger.Error("failed to get new IP from tor", zap.String("status", status))
-		return
+		return fmt.Errorf("NEWNYM command failed with status: %s", strings.TrimSpace(status))
 	}
 
 	w.logger.Info("successfully rotated IP address")
+	return nil
 }
 
 func GenerateContextID() string {

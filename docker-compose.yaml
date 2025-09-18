@@ -108,6 +108,11 @@ services:
   axora-tor:
     image: dperson/torproxy
     container_name: axora-tor
+    volumes:
+      - ./torrc:/etc/tor/torrc:ro
+    environment:
+      # Enable control port without password
+      - TOR_OPTS=--ControlPort 9051 --ControlListenAddress 0.0.0.0:9051 --HashedControlPassword ""
     networks:
       - axora-network
     ports:

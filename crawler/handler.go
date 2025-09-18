@@ -53,7 +53,7 @@ func (w *Worker) OnError(ctx context.Context, collector *colly.Collector) colly.
 			return
 		}
 
-		w.RotateIP()
+		err = w.RotateIP()
 		w.logger.Error("HTTP error",
 			zap.String("url", r.Request.URL.String()),
 			zap.Int("status_code", r.StatusCode),
