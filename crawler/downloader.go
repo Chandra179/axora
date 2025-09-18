@@ -3,6 +3,9 @@ package crawler
 import (
 	"context"
 	"crypto/md5"
+	"crypto/sha1"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +15,8 @@ import (
 
 	"go.uber.org/zap"
 )
+
+const maxFilenameLength = 100
 
 type FileDownloader struct {
 	httpClient   http.Client
@@ -31,19 +36,24 @@ func NewFileDownloader(client http.Client, downloadPath string, ipChecker *IPChe
 }
 
 // DownloadFile downloads a file from the given URL to the specified path
-func (d *FileDownloader) DownloadFile(contextId, url, filename, expectedMD5 string) error {
+func (d *FileDownloader) DownloadFile(ctx context.Context, url, filename, expectedMD5 string) error {
 	if expectedMD5 == "" {
 		return nil
 	}
-	var currentIP string
-	ctx := context.Background()
-	ctx = context.WithValue(ctx, "context_id", contextId)
 
+	savePath := filepath.Join(d.downloadPath, filename)
+	if _, err := os.Stat(savePath); err == nil {
+		if err := d.ValidateDownload(savePath, expectedMD5); err == nil {
+			d.logger.Info("File already exists and is valid, skipping download",
+				zap.String("save_path", savePath))
+			return nil
+		}
+	}
+
+	var currentIP string
 	if d.ipChecker != nil {
 		currentIP = d.ipChecker.GetPublicIP(ctx)
 	}
-
-	savePath := filepath.Join(d.downloadPath, filename)
 
 	d.logger.Info("Starting file download",
 		zap.String("url", url),
@@ -74,7 +84,11 @@ func (d *FileDownloader) DownloadFile(contextId, url, filename, expectedMD5 stri
 		return fmt.Errorf("server returned status %d", resp.StatusCode)
 	}
 
-	var out *os.File
+	out, err := os.Create(savePath)
+	if err != nil {
+		return fmt.Errorf("failed to create file %s: %w", savePath, err)
+	}
+	defer out.Close()
 
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
@@ -98,7 +112,7 @@ func (d *FileDownloader) DownloadFile(contextId, url, filename, expectedMD5 stri
 // ValidateDownload verifies the MD5 hash of a downloaded file
 func (d *FileDownloader) ValidateDownload(filePath, expectedMD5 string) error {
 	if expectedMD5 == "" {
-		return nil // No validation needed
+		return errors.New("md5 required: " + expectedMD5)
 	}
 
 	file, err := os.Open(filePath)
@@ -139,5 +153,13 @@ func ExtractFilename(contentDisposition string) string {
 		return defaultName
 	}
 
+	if len(filename) > maxFilenameLength {
+		hash := sha1.New()
+		hash.Write([]byte(filename))
+		hashStr := hex.EncodeToString(hash.Sum(nil))
+		extension := filepath.Ext(filename)
+		base := filename[:maxFilenameLength-len(extension)-8]
+		return fmt.Sprintf("%s-%s%s", base, hashStr[:7], extension)
+	}
 	return filename
 }

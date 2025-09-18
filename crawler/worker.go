@@ -1,7 +1,12 @@
 package crawler
 
 import (
+	"bufio"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"net"
 	"net/http"
 
 	"axora/pkg/chunking"
@@ -10,6 +15,13 @@ import (
 	"github.com/gocolly/colly/v2"
 	"go.uber.org/zap"
 	"golang.org/x/net/proxy"
+)
+
+type ContextKey string
+
+const (
+	ContextIDKey ContextKey = "context_id"
+	IPKey        ContextKey = "ip"
 )
 
 type Worker struct {
@@ -23,7 +35,8 @@ type Worker struct {
 	visitTracker    *VisitTracker
 	config          *CrawlerConfig
 	logger          *zap.Logger
-	maxRetries      uint32
+	maxRetries      int
+	torControlURL   string
 }
 
 // NewWorker creates a new crawler worker with all dependencies
@@ -32,6 +45,7 @@ func NewWorker(
 	extractor *ContentExtractor,
 	chunker chunking.ChunkingClient,
 	torProxyUrl string,
+	torControlURL string,
 	downloadPath string,
 	logger *zap.Logger,
 	config *CrawlerConfig,
@@ -79,6 +93,7 @@ func NewWorker(
 		config:          config,
 		logger:          logger,
 		maxRetries:      1,
+		torControlURL:   torControlURL,
 	}
 
 	return worker, nil
@@ -86,10 +101,17 @@ func NewWorker(
 
 // Crawl starts crawling the provided URLs
 func (w *Worker) Crawl(ctx context.Context, urls []string) error {
-	contextID := GenerateContextID("crawl")
-	currentIP := w.ipChecker.GetPublicIP(ctx)
+	contextId := GenerateContextID()
+	ip := w.ipChecker.GetPublicIP(ctx)
+	ctx = context.WithValue(ctx, ContextIDKey, contextId)
+	ctx = context.WithValue(ctx, IPKey, ip)
 
-	w.setupEventHandlers(contextID, currentIP)
+	w.logger.With(
+		zap.String(string(ContextIDKey), contextId),
+		zap.String(string(IPKey), ip),
+	)
+
+	w.setupEventHandlers(ctx)
 
 	for _, urlStr := range urls {
 		if err := w.collector.Visit(urlStr); err != nil {
@@ -108,9 +130,59 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) error {
 }
 
 // setupEventHandlers configures all colly event handlers
-func (w *Worker) setupEventHandlers(contextID, currentIP string) {
-	w.collector.OnRequest(w.OnRequest(contextID, currentIP))
-	w.collector.OnHTML("a[href]", w.OnHTML())
-	w.collector.OnError(w.OnError(w.collector))
-	w.collector.OnResponse(w.OnResponse())
+func (w *Worker) setupEventHandlers(ctx context.Context) {
+	w.collector.OnRequest(w.OnRequest(ctx))
+	w.collector.OnHTML("a[href]", w.OnHTML(ctx))
+	w.collector.OnError(w.OnError(ctx, w.collector))
+	w.collector.OnResponse(w.OnResponse(ctx))
+}
+
+func (w *Worker) RotateIP() {
+	conn, err := net.Dial("tcp", w.torControlURL)
+	if err != nil {
+		w.logger.Error("failed to connect to tor control port", zap.Error(err))
+		return
+	}
+	defer conn.Close()
+
+	// Authenticate with no password
+	if _, err := fmt.Fprintf(conn, "AUTHENTICATE \"\"\r\n"); err != nil {
+		w.logger.Error("failed to send authenticate command to tor", zap.Error(err))
+		return
+	}
+	status, err := bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		w.logger.Error("failed to read authentication status from tor", zap.Error(err))
+		return
+	}
+	if status != "250 OK\r\n" {
+		w.logger.Error("failed to authenticate with tor", zap.String("status", status))
+		return
+	}
+
+	// Send NEWNYM signal
+	if _, err := fmt.Fprintf(conn, "SIGNAL NEWNYM\r\n"); err != nil {
+		w.logger.Error("failed to send NEWNYM signal to tor", zap.Error(err))
+		return
+	}
+	status, err = bufio.NewReader(conn).ReadString('\n')
+	if err != nil {
+		w.logger.Error("failed to read NEWNYM status from tor", zap.Error(err))
+		return
+	}
+	if status != "250 OK\r\n" {
+		w.logger.Error("failed to get new IP from tor", zap.String("status", status))
+		return
+	}
+
+	w.logger.Info("successfully rotated IP address")
+}
+
+func GenerateContextID() string {
+	randomBytes := make([]byte, 16)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		panic(err)
+	}
+	return hex.EncodeToString(randomBytes)
 }

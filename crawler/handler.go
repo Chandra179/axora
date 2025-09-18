@@ -1,6 +1,7 @@
 package crawler
 
 import (
+	"context"
 	"net/url"
 	"strings"
 
@@ -9,21 +10,17 @@ import (
 )
 
 // OnRequest handles request events
-func (h *Worker) OnRequest(contextID, ip string) colly.RequestCallback {
+func (h *Worker) OnRequest(ctx context.Context) colly.RequestCallback {
 	return func(r *colly.Request) {
-		r.Ctx.Put("context_id", contextID)
-		r.Ctx.Put("ip", ip)
-		h.logger.With(
-			zap.String("context_id", contextID),
-			zap.String("ip", ip),
-		)
+		r.Ctx.Put(string(ContextIDKey), ctx.Value(ContextIDKey).(string))
+		r.Ctx.Put(string(IPKey), ctx.Value(IPKey).(string))
 
 		h.visitTracker.RecordVisit(r.URL.String())
 	}
 }
 
 // OnHTML handles HTML parsing to find links
-func (w *Worker) OnHTML() colly.HTMLCallback {
+func (w *Worker) OnHTML(ctx context.Context) colly.HTMLCallback {
 	return func(e *colly.HTMLElement) {
 		link := e.Attr("href")
 		absoluteURL := e.Request.AbsoluteURL(link)
@@ -49,15 +46,15 @@ func (w *Worker) OnHTML() colly.HTMLCallback {
 }
 
 // OnError handles error events with retry logic
-func (w *Worker) OnError(collector *colly.Collector) colly.ErrorCallback {
+func (w *Worker) OnError(ctx context.Context, collector *colly.Collector) colly.ErrorCallback {
 	return func(r *colly.Response, err error) {
-		var reqLogger *zap.Logger
 		if r == nil {
 			w.logger.Error("Request failed", zap.Error(err))
 			return
 		}
 
-		reqLogger.Error("HTTP error",
+		w.RotateIP()
+		w.logger.Error("HTTP error",
 			zap.String("url", r.Request.URL.String()),
 			zap.Int("status_code", r.StatusCode),
 			zap.Error(err))
@@ -67,12 +64,12 @@ func (w *Worker) OnError(collector *colly.Collector) colly.ErrorCallback {
 			r.Ctx.Put("retryCount", 1)
 			retryCount = 1
 		}
-		rc := retryCount.(uint32)
+		rc := retryCount.(int)
 		if rc < w.maxRetries {
 			rc = rc + 1
 			w.logger.Info("Retrying request",
 				zap.String("url", r.Request.URL.String()),
-				zap.Uint32("retry_attempt", rc))
+				zap.Int("retry_attempt", rc))
 
 			r.Ctx.Put("retryCount", rc)
 			err := collector.Request("GET", r.Request.URL.String(), nil, r.Ctx, nil)
@@ -86,8 +83,14 @@ func (w *Worker) OnError(collector *colly.Collector) colly.ErrorCallback {
 }
 
 // OnResponse handles successful responses and downloads
-func (w *Worker) OnResponse() colly.ResponseCallback {
+func (w *Worker) OnResponse(ctx context.Context) colly.ResponseCallback {
 	return func(r *colly.Response) {
+		w.logger.Info("response received",
+			zap.String("url", r.Request.URL.String()),
+			zap.String("content_type", r.Headers.Get("Content-Type")),
+			zap.String("context_id", r.Ctx.Get("context_id")),
+			zap.String("ip", r.Ctx.Get("ip")))
+
 		contentType := r.Headers.Get("Content-Type")
 		contentDisposition := r.Headers.Get("Content-Disposition")
 
@@ -102,7 +105,7 @@ func (w *Worker) OnResponse() colly.ResponseCallback {
 			q := u.Query()
 			md5hash := q.Get("md5")
 
-			err := w.downloader.DownloadFile(r.Ctx.Get("context_id"), u.String(), filename, md5hash)
+			err := w.downloader.DownloadFile(ctx, u.String(), filename, md5hash)
 			if err != nil {
 				w.logger.Error("Download failed",
 					zap.String("filename", filename),

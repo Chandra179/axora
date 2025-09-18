@@ -51,6 +51,7 @@ func main() {
 		extractor,
 		recurCharChunking,
 		cfg.TorProxyURL,
+		cfg.TorControlURL,
 		cfg.DownloadPath,
 		logger,
 		nil,
@@ -75,6 +76,6 @@ func Crawl(worker *crawler.Worker, embed embedding.Client) http.HandlerFunc {
 			http.Error(w, "missing q parameter", http.StatusBadRequest)
 			return
 		}
-		worker.Crawl(context.Background(), []string{"https://libgen.li/index.php?req=" + query})
+		worker.Crawl(r.Context(), []string{"https://libgen.li/index.php?req=" + query})
 	}
 }
