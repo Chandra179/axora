@@ -50,7 +50,7 @@ func main() {
 		qdb,
 		extractor,
 		recurCharChunking,
-		cfg.TorProxyURL,
+		cfg.ProxyURL,
 		cfg.TorControlURL,
 		cfg.DownloadPath,
 		logger,

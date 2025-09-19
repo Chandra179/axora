@@ -1,7 +1,0 @@
-SocksPort 0.0.0.0:9050
-ControlPort 127.0.0.1:9051
-HashedControlPassword 16:E1D5AD295AE2794E608FBB259DE7385B13B7499A04E5061F6D2B311E81
-Log notice stdout
-DisableDebuggerAttachment 0
-NewCircuitPeriod 10 seconds
-MaxCircuitDirtiness 20 seconds

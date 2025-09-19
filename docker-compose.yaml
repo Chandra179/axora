@@ -46,8 +46,7 @@ services:
       QDRANT_HOST: ${QDRANT_HOST}
       MPNETBASEV2_URL: ${MPNETBASEV2_URL}
       CHUNKING_URL: ${CHUNKING_URL}
-      TOR_PROXY_URL: ${TOR_PROXY_URL}
-      TOR_CONTROL_URL: ${TOR_CONTROL_URL}
+      PROXY_URL: ${PROXY_URL}
       DOWNLOAD_PATH: ${DOWNLOAD_PATH}
       DOCKER_BUILDKIT: 1
     ports:
@@ -105,24 +104,17 @@ services:
           cpus: '0.2'
           memory: 256M
 
-  axora-tor:
-    image: dperson/torproxy
-    container_name: axora-tor
-    volumes:
-      - ./torrc:/etc/tor/torrc:ro
-    networks:
-      - axora-network
+  axora-tor-proxy:
+    image: zhaowde/rotating-tor-http-proxy
+    container_name: axora-tor-proxy
     ports:
-      - "9050:9050"
-
-  tor-control-bridge:
-    image: alpine/socat
-    container_name: tor-control-bridge
-    command: tcp-listen:9051,fork,reuseaddr tcp-connect:axora-tor:9051
+      - "3128:3128"
+    environment:
+      TOR_INSTANCES: 5
+      TOR_REBUILD_INTERVAL: 600
+      TOR_EXIT_COUNTRY: "us,de,ch,at"
     networks:
       - axora-network
-    depends_on:
-    - axora-tor
 
 volumes:
   qdrant_storage:
