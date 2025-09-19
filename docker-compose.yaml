@@ -114,18 +114,17 @@ services:
       - axora-network
     ports:
       - "9050:9050"
-  
-  axora-tor-proxy:
+
+  tor-control-bridge:
     image: alpine/socat
-    container_name: axora-tor-proxy
-    command: ["TCP-LISTEN:9051,reuseaddr,fork,bind=0.0.0.0", "TCP:axora-tor:9051"]
+    container_name: tor-control-bridge
+    command: tcp-listen:9051,fork,reuseaddr tcp-connect:axora-tor:9051
     networks:
       - axora-network
     ports:
-      - "127.0.0.1:9051:9051"   # expose only to host loopback
+      - "9051:9051"
     depends_on:
-      - axora-tor
-
+    - axora-tor
 
 volumes:
   qdrant_storage:
