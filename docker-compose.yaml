@@ -121,8 +121,6 @@ services:
     command: tcp-listen:9051,fork,reuseaddr tcp-connect:axora-tor:9051
     networks:
       - axora-network
-    ports:
-      - "9051:9051"
     depends_on:
     - axora-tor
 

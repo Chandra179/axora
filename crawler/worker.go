@@ -8,7 +8,6 @@ import (
 	"net"
 	"net/http"
 	"net/textproto"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -153,16 +152,29 @@ func (w *Worker) setupEventHandlers(ctx context.Context) {
 }
 
 func (w *Worker) RotateIP() error {
-	w.logger.Info("Dialing Tor control port: " + w.torControlURL)
-	conn, err := net.DialTimeout("tcp", w.torControlURL, 30*time.Second)
+	w.logger.Info("Attempting to rotate IP via Tor control")
+
+	// Add timeout context for the entire operation
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	// Use DialContext with timeout
+	d := net.Dialer{Timeout: 10 * time.Second}
+	conn, err := d.DialContext(ctx, "tcp", w.torControlURL)
 	if err != nil {
-		w.logger.Error("Failed to dial Tor control port: " + err.Error())
-		return err
+		w.logger.Error("Failed to dial Tor control port", zap.Error(err))
+		return fmt.Errorf("failed to dial Tor control port: %w", err)
 	}
 	defer func() {
 		w.logger.Info("Closing Tor control connection")
 		conn.Close()
 	}()
+
+	// Set connection deadline
+	if err := conn.SetDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		w.logger.Error("Failed to set connection deadline", zap.Error(err))
+		return fmt.Errorf("failed to set connection deadline: %w", err)
+	}
 
 	w.logger.Info("Wrapping control connection in textproto")
 	tp := textproto.NewConn(conn)
@@ -171,73 +183,103 @@ func (w *Worker) RotateIP() error {
 		tp.Close()
 	}()
 
-	pass := os.Getenv("myStrongPassword")
 	w.logger.Info("Sending AUTHENTICATE command to Tor")
-	if err := tp.PrintfLine(`AUTHENTICATE "%s"`, pass); err != nil {
-		w.logger.Error("Failed to send AUTHENTICATE: " + err.Error())
-		return err
+	if err := tp.PrintfLine(`AUTHENTICATE "%s"`, "noturpw321"); err != nil {
+		w.logger.Error("Failed to send AUTHENTICATE command", zap.Error(err))
+		return fmt.Errorf("failed to send AUTHENTICATE command: %w", err)
 	}
 
+	// Add small delay before reading response
+	time.Sleep(100 * time.Millisecond)
+
+	w.logger.Info("Reading AUTHENTICATE response")
 	line, err := tp.ReadLine()
 	if err != nil {
-		w.logger.Error("Error reading AUTHENTICATE response: " + err.Error())
-		return err
+		w.logger.Error("Error reading AUTHENTICATE response", zap.Error(err))
+
+		// Try to check if connection is still alive
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return fmt.Errorf("timeout reading AUTHENTICATE response: %w", err)
+		}
+		return fmt.Errorf("failed to read AUTHENTICATE response: %w", err)
 	}
-	w.logger.Info("AUTHENTICATE response: " + line)
+
+	w.logger.Info("AUTHENTICATE response received", zap.String("response", line))
+
 	if !strings.HasPrefix(line, "250") {
-		return fmt.Errorf("auth failed: %s", line)
+		w.logger.Error("Authentication failed", zap.String("response", line))
+		return fmt.Errorf("authentication failed with response: %s", line)
 	}
 
-	w.logger.Info("Sending SIGNAL NEWNYM to Tor")
+	w.logger.Info("Authentication successful, sending SIGNAL NEWNYM")
 	if err := tp.PrintfLine("SIGNAL NEWNYM"); err != nil {
-		w.logger.Warn("Err creating SIGNAL NEWNYM: " + err.Error())
-		return err
+		w.logger.Error("Failed to send SIGNAL NEWNYM", zap.Error(err))
+		return fmt.Errorf("failed to send SIGNAL NEWNYM: %w", err)
 	}
 
+	// Add small delay before reading response
+	time.Sleep(100 * time.Millisecond)
+
+	w.logger.Info("Reading NEWNYM response")
 	line, err = tp.ReadLine()
 	if err != nil {
-		w.logger.Error("Error reading NEWNYM response: " + err.Error())
-		return err
-	}
-	w.logger.Info("NEWNYM response: " + line)
-	if !strings.HasPrefix(line, "250") {
-		return fmt.Errorf("NEWNYM failed: %s", line)
+		w.logger.Error("Error reading NEWNYM response", zap.Error(err))
+		return fmt.Errorf("failed to read NEWNYM response: %w", err)
 	}
 
-	w.logger.Info("Creating SOCKS5 dialer via " + w.torProxyUrl)
+	w.logger.Info("NEWNYM response received", zap.String("response", line))
+
+	if !strings.HasPrefix(line, "250") {
+		w.logger.Error("NEWNYM command failed", zap.String("response", line))
+		return fmt.Errorf("NEWNYM failed with response: %s", line)
+	}
+
+	// Wait a moment for Tor to establish new circuit
+	w.logger.Info("Waiting for new Tor circuit to establish")
+	time.Sleep(2 * time.Second)
+
+	w.logger.Info("Creating new SOCKS5 dialer via", zap.String("proxy", w.torProxyUrl))
 	dialer, err := proxy.SOCKS5("tcp", w.torProxyUrl, nil, proxy.Direct)
 	if err != nil {
-		w.logger.Error("Failed to create SOCKS5 dialer: " + err.Error())
-		return err
+		w.logger.Error("Failed to create SOCKS5 dialer", zap.Error(err))
+		return fmt.Errorf("failed to create SOCKS5 dialer: %w", err)
 	}
 
-	w.logger.Info("Building new http.Transport and http.Client")
+	w.logger.Info("Building new HTTP transport and client")
 	dialContext := func(ctx context.Context, network, addr string) (net.Conn, error) {
 		return dialer.Dial(network, addr)
 	}
 
 	newTransport := &http.Transport{
-		DialContext:       dialContext,
-		DisableKeepAlives: false, // keep-alives are okay if you close idle conns on swap
+		DialContext:           dialContext,
+		DisableKeepAlives:     false,
+		MaxIdleConns:          100,
+		IdleConnTimeout:       90 * time.Second,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
 	}
+
 	newClient := &http.Client{
 		Transport: newTransport,
+		Timeout:   30 * time.Second,
 	}
 
 	w.logger.Info("Swapping in new transport and client")
 	w.mu.Lock()
-	old := w.transport
+	oldTransport := w.transport
 	w.transport = newTransport
+	w.httpClient = *newClient
 	w.collector.SetClient(newClient)
 	w.collector.WithTransport(newTransport)
 	w.mu.Unlock()
 
-	if old != nil {
+	// Clean up old transport
+	if oldTransport != nil {
 		w.logger.Info("Closing old idle connections")
-		old.CloseIdleConnections()
+		oldTransport.CloseIdleConnections()
 	}
 
-	w.logger.Info("SUCCESS: Rotated IP")
+	w.logger.Info("Successfully rotated IP via Tor")
 	return nil
 }
 
