@@ -4,18 +4,19 @@ import (
 	"context"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/gocolly/colly/v2"
 	"go.uber.org/zap"
 )
 
 // OnRequest handles request events
-func (h *Worker) OnRequest(ctx context.Context) colly.RequestCallback {
+func (w *Worker) OnRequest(ctx context.Context) colly.RequestCallback {
 	return func(r *colly.Request) {
 		r.Ctx.Put(string(ContextIDKey), ctx.Value(ContextIDKey).(string))
 		r.Ctx.Put(string(IPKey), ctx.Value(IPKey).(string))
 
-		h.visitTracker.RecordVisit(r.URL.String())
+		w.visitTracker.RecordVisit(r.URL.String())
 	}
 }
 
@@ -53,17 +54,23 @@ func (w *Worker) OnError(ctx context.Context, collector *colly.Collector) colly.
 			return
 		}
 
+		ip := w.GetPublicIP(ctx)
+		retryCount := r.Ctx.GetAny("retryCount")
+		if retryCount == nil {
+			r.Ctx.Put("retryCount", 0)
+			retryCount = 0
+		}
+		rc := r.Ctx.GetAny("retryCount").(int)
+
+		// Waiting for IP rotation
+		time.Sleep(w.delay)
 		w.logger.Error("HTTP error",
 			zap.String("url", r.Request.URL.String()),
 			zap.Int("status_code", r.StatusCode),
+			zap.Int("retry_count", rc),
+			zap.String("ip", ip),
 			zap.Error(err))
 
-		retryCount := r.Ctx.GetAny("retryCount")
-		if retryCount == nil {
-			r.Ctx.Put("retryCount", 1)
-			retryCount = 1
-		}
-		rc := retryCount.(int)
 		if rc < w.maxRetries {
 			rc = rc + 1
 			w.logger.Info("Retrying request",
@@ -86,9 +93,7 @@ func (w *Worker) OnResponse(ctx context.Context) colly.ResponseCallback {
 	return func(r *colly.Response) {
 		w.logger.Info("response received",
 			zap.String("url", r.Request.URL.String()),
-			zap.String("content_type", r.Headers.Get("Content-Type")),
-			zap.String("context_id", r.Ctx.Get("context_id")),
-			zap.String("ip", r.Ctx.Get("ip")))
+			zap.String("content_type", r.Headers.Get("Content-Type")))
 
 		contentType := r.Headers.Get("Content-Type")
 		contentDisposition := r.Headers.Get("Content-Disposition")

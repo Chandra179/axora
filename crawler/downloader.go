@@ -75,16 +75,14 @@ func (w *Worker) DownloadFile(ctx context.Context, url, filename, expectedMD5 st
 		return fmt.Errorf("copy error: %w", err)
 	}
 
-	w.logger.Info("File download completed",
-		zap.String("save_path", savePath))
+	w.logger.Info("File download completed", zap.String("save_path", savePath))
 
 	if err := w.ValidateDownload(savePath, expectedMD5); err != nil {
 		os.Remove(savePath)
 		return err
 	}
 
-	w.logger.Info("MD5 verification successful",
-		zap.String("md5", expectedMD5))
+	w.logger.Info("MD5 verification successful", zap.String("md5", expectedMD5))
 
 	return nil
 }

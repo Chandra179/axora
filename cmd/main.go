@@ -38,14 +38,10 @@ func main() {
 	// ==========
 	// SERVICES
 	// ==========
+	logger, _ := zap.NewProduction()
 	extractor := crawler.NewContentExtractor()
 	mpnetbasev2 := embedding.NewMpnetBaseV2(cfg.AllMinilmL6V2URL)
 	recurCharChunking := chunking.NewRecursiveCharacterChunking(mpnetbasev2)
-
-	// ==========
-	// Crawler worker
-	// ==========
-	logger, _ := zap.NewProduction()
 	worker, err := crawler.NewWorker(
 		qdb,
 		extractor,

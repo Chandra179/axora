@@ -35,3 +35,4 @@ volumes/
 ./model/venv
 /model/venv
 model/venv
+downloads/

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/url"
+	"time"
 
 	"axora/pkg/chunking"
 	"axora/repository"
@@ -37,6 +38,7 @@ type Worker struct {
 	iPCheckServices []string
 	torProxyUrl     string
 	transport       *http.Transport
+	delay           time.Duration
 }
 
 // NewWorker creates a new crawler worker with all dependencies
@@ -84,13 +86,14 @@ func NewWorker(
 		visitTracker:    visitTracker,
 		config:          config,
 		logger:          logger,
-		maxRetries:      1,
+		maxRetries:      config.MaxRetries,
 		torControlURL:   torControlURL,
 		httpClient:      *client,
 		downloadPath:    downloadPath,
 		iPCheckServices: config.IPCheckServices,
 		torProxyUrl:     torProxyUrl,
 		transport:       transport,
+		delay:           config.Delay,
 	}
 
 	return worker, nil
