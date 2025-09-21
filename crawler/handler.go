@@ -61,9 +61,11 @@ func (w *Worker) OnError(ctx context.Context, collector *colly.Collector) colly.
 			retryCount = 0
 		}
 		rc := r.Ctx.GetAny("retryCount").(int)
+		if rc > w.maxRetries {
+			return
+		}
 
-		// Waiting for IP rotation
-		time.Sleep(w.delay)
+		time.Sleep(w.config.IPRotationDelay)
 		w.logger.Error("HTTP error",
 			zap.String("url", r.Request.URL.String()),
 			zap.Int("status_code", r.StatusCode),
@@ -71,19 +73,17 @@ func (w *Worker) OnError(ctx context.Context, collector *colly.Collector) colly.
 			zap.String("ip", ip),
 			zap.Error(err))
 
-		if rc < w.maxRetries {
-			rc = rc + 1
-			w.logger.Info("Retrying request",
-				zap.String("url", r.Request.URL.String()),
-				zap.Int("retry_attempt", rc))
+		rc = rc + 1
+		w.logger.Info("Retrying request",
+			zap.String("url", r.Request.URL.String()),
+			zap.Int("retry_attempt", rc))
 
-			r.Ctx.Put("retryCount", rc)
-			err := collector.Request("GET", r.Request.URL.String(), nil, r.Ctx, nil)
-			if err != nil {
-				w.logger.Error("Failed to resubmit request",
-					zap.String("url", r.Request.URL.String()),
-					zap.Error(err))
-			}
+		r.Ctx.Put("retryCount", rc)
+		err = collector.Request("GET", r.Request.URL.String(), nil, r.Ctx, nil)
+		if err != nil {
+			w.logger.Error("Failed to resubmit request",
+				zap.String("url", r.Request.URL.String()),
+				zap.Error(err))
 		}
 	}
 }

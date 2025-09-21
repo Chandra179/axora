@@ -55,7 +55,6 @@ func NewWorker(
 	if config == nil {
 		config = DefaultConfig()
 	}
-
 	proxyURL, _ := url.Parse(torProxyUrl)
 	transport := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
 	client := &http.Client{Transport: transport}
@@ -67,6 +66,9 @@ func NewWorker(
 		colly.UserAgent(config.UserAgent),
 		colly.MaxDepth(config.MaxDepth),
 		colly.Async(true),
+		colly.TraceHTTP(),
+		colly.ParseHTTPErrorResponse(),
+		// colly.Debugger(&debug.LogDebugger{}),
 	)
 	c.WithTransport(transport)
 	c.SetClient(client)
@@ -74,7 +76,7 @@ func NewWorker(
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
 		Parallelism: config.Parallelism,
-		Delay:       config.Delay,
+		Delay:       config.RequestDelay,
 	})
 
 	worker := &Worker{
@@ -93,7 +95,7 @@ func NewWorker(
 		iPCheckServices: config.IPCheckServices,
 		torProxyUrl:     torProxyUrl,
 		transport:       transport,
-		delay:           config.Delay,
+		delay:           config.IPRotationDelay,
 	}
 
 	return worker, nil
@@ -120,7 +122,6 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) error {
 		}
 	}
 	w.collector.Wait()
-
 	w.logger.Info("Crawl session completed",
 		zap.Int("total_visits", w.visitTracker.GetTotalVisits()),
 		zap.Int("unique_urls", w.visitTracker.GetUniqueURLsCount()))

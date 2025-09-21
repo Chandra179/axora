@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"axora/config"
 	"axora/crawler"
@@ -72,6 +73,11 @@ func Crawl(worker *crawler.Worker, embed embedding.Client) http.HandlerFunc {
 			http.Error(w, "missing q parameter", http.StatusBadRequest)
 			return
 		}
-		worker.Crawl(r.Context(), []string{"https://libgen.li/index.php?req=" + query})
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Hour)
+		defer cancel()
+
+		worker.Crawl(ctx, []string{"https://libgen.li/index.php?req=" + query})
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("Crawl started"))
 	}
 }

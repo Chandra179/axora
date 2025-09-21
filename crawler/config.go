@@ -8,7 +8,8 @@ type CrawlerConfig struct {
 	MaxDepth        int
 	RequestTimeout  time.Duration
 	Parallelism     int
-	Delay           time.Duration
+	IPRotationDelay time.Duration
+	RequestDelay    time.Duration
 	MaxRetries      int
 	UserAgent       string
 	MaxURLVisits    int
@@ -21,13 +22,14 @@ type CrawlerConfig struct {
 // DefaultConfig returns a default crawler configuration
 func DefaultConfig() *CrawlerConfig {
 	return &CrawlerConfig{
-		MaxDepth:       5,
-		RequestTimeout: 300 * time.Second,
-		Parallelism:    2,
-		Delay:          600 * time.Second,
-		MaxRetries:     3,
-		UserAgent:      "Axora-Crawler/1.0",
-		MaxURLVisits:   1,
+		MaxDepth:        5,
+		RequestTimeout:  10800 * time.Second,
+		Parallelism:     5,
+		IPRotationDelay: 40 * time.Second,
+		RequestDelay:    5 * time.Second,
+		MaxRetries:      3,
+		UserAgent:       "Axora-Crawler/1.0",
+		MaxURLVisits:    1,
 		AllowedPaths: []string{
 			"/index.php",
 			"/edition.php",
