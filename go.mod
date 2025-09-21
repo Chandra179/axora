@@ -6,6 +6,7 @@ require (
 	github.com/go-shiori/go-readability v0.0.0-20250217085726-9f5bf5ca7612
 	github.com/gocolly/colly/v2 v2.2.0
 	github.com/google/uuid v1.6.0
+	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
 	github.com/qdrant/go-client v1.15.2
 	github.com/tmc/langchaingo v0.1.13
 	go.uber.org/zap v1.27.0
