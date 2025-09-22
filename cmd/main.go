@@ -11,6 +11,7 @@ import (
 
 	"axora/config"
 	"axora/crawler"
+	"axora/file"
 	"axora/pkg/chunking"
 	"axora/pkg/embedding"
 	qdrantClient "axora/pkg/qdrantdb"
@@ -43,6 +44,9 @@ func main() {
 	extractor := crawler.NewContentExtractor()
 	mpnetbasev2 := embedding.NewMpnetBaseV2(cfg.AllMinilmL6V2URL)
 	recurCharChunking := chunking.NewRecursiveCharacterChunking(mpnetbasev2)
+	pdfPro := file.NewPDFExtractor()
+	epubPro := file.NewEPUBExtractor()
+	fp := file.NewCore(pdfPro, epubPro, cfg.DownloadPath)
 	worker, err := crawler.NewWorker(
 		qdb,
 		extractor,
@@ -58,12 +62,15 @@ func main() {
 	}
 
 	// ==========
-	// HTTP
+	// RUN
 	// ==========
+	go func() {
+		fp.ProcessFiles()
+	}()
 	http.Handle("/scrap", Crawl(worker, mpnetbasev2))
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil))
 
 	fmt.Println("Running")
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil))
 }
 
 func Crawl(worker *crawler.Worker, embed embedding.Client) http.HandlerFunc {
