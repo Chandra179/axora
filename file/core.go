@@ -23,6 +23,7 @@ type FileResult struct {
 	FileExtension string
 	ExtractedText string
 	TextLength    int
+	Error         string // Add error field to track processing issues
 }
 
 // NewCore creates a new Core instance with the required dependencies
@@ -34,7 +35,7 @@ func NewCore(pdfExtractor, epubExtractor TextExtractor, directoryPath string) *C
 	}
 }
 
-// processFile processes a single file and returns the result
+// processFile processes a single file and returns the result with proper error handling
 func (c *Core) processFile(path string, fileInfo os.FileInfo) *FileResult {
 	fileSize := fileInfo.Size()
 	extension := strings.ToLower(filepath.Ext(path))
@@ -42,34 +43,72 @@ func (c *Core) processFile(path string, fileInfo os.FileInfo) *FileResult {
 
 	fmt.Printf("Processing file: %s (Size: %d bytes, Extension: %s)\n", path, fileSize, extension)
 
+	result := &FileResult{
+		FileName:      fileName,
+		FileSize:      fileSize,
+		FileExtension: extension,
+	}
+
+	// Add recovery mechanism to handle panics
+	defer func() {
+		if r := recover(); r != nil {
+			result.Error = fmt.Sprintf("Panic during processing: %v", r)
+			fmt.Printf("Recovered from panic while processing %s: %v\n", path, r)
+		}
+	}()
+
 	var extractedText string
+	var err error
 
 	switch extension {
 	case ".pdf":
 		if c.pdfExtractor != nil {
-			extractedText = c.pdfExtractor.ExtractText(path)
+			// Wrap the extraction in a safe call
+			extractedText, err = c.safeExtractText(c.pdfExtractor, path)
+			if err != nil {
+				result.Error = fmt.Sprintf("PDF extraction error: %v", err)
+				fmt.Printf("Error extracting PDF %s: %v\n", path, err)
+				return result
+			}
 		}
 	case ".epub":
 		if c.epubExtractor != nil {
-			extractedText = c.epubExtractor.ExtractText(path)
+			// Wrap the extraction in a safe call
+			extractedText, err = c.safeExtractText(c.epubExtractor, path)
+			if err != nil {
+				result.Error = fmt.Sprintf("EPUB extraction error: %v", err)
+				fmt.Printf("Error extracting EPUB %s: %v\n", path, err)
+				return result
+			}
 		}
 	default:
+		result.Error = fmt.Sprintf("Unsupported file type: %s", extension)
 		fmt.Printf("Unsupported file type: %s\n", extension)
-		return nil
+		return result
 	}
 
 	// Filter out failed extractions
 	if extractedText == "" {
-		return nil
+		result.Error = "No text extracted"
+		return result
 	}
 
-	return &FileResult{
-		FileName:      fileName,
-		FileSize:      fileSize,
-		FileExtension: extension,
-		ExtractedText: extractedText,
-		TextLength:    len(extractedText),
-	}
+	result.ExtractedText = extractedText
+	result.TextLength = len(extractedText)
+
+	return result
+}
+
+// safeExtractText wraps the text extraction with panic recovery
+func (c *Core) safeExtractText(extractor TextExtractor, path string) (text string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("extraction panic: %v", r)
+		}
+	}()
+
+	text = extractor.ExtractText(path)
+	return text, nil
 }
 
 // ProcessFiles processes all supported files in the directory and returns structured results
@@ -112,6 +151,13 @@ func (c *Core) ProcessFiles() []FileResult {
 			return nil
 		}
 
+		// Add file size check to skip potentially problematic very large files
+		const maxFileSize = 50 * 1024 * 1024 // 50MB limit
+		if fileInfo.Size() > maxFileSize {
+			fmt.Printf("Skipping large file %s (size: %d bytes)\n", path, fileInfo.Size())
+			return nil
+		}
+
 		// Launch a goroutine for each supported file
 		wg.Add(1)
 		go func(filePath string, info os.FileInfo) {
@@ -136,4 +182,26 @@ func (c *Core) ProcessFiles() []FileResult {
 	<-done
 
 	return results
+}
+
+// GetSuccessfulResults returns only results that were processed successfully
+func (c *Core) GetSuccessfulResults(results []FileResult) []FileResult {
+	var successful []FileResult
+	for _, result := range results {
+		if result.Error == "" && result.ExtractedText != "" {
+			successful = append(successful, result)
+		}
+	}
+	return successful
+}
+
+// GetFailedResults returns only results that failed processing
+func (c *Core) GetFailedResults(results []FileResult) []FileResult {
+	var failed []FileResult
+	for _, result := range results {
+		if result.Error != "" {
+			failed = append(failed, result)
+		}
+	}
+	return failed
 }
