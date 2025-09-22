@@ -110,7 +110,7 @@ services:
     ports:
       - "3128:3128"
     environment:
-      TOR_INSTANCES: 5
+      TOR_INSTANCES: 30
       TOR_REBUILD_INTERVAL: 600
       TOR_EXIT_COUNTRY: jp,tw,th,id,sg
     networks:

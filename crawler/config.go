@@ -24,8 +24,8 @@ func DefaultConfig() *CrawlerConfig {
 	return &CrawlerConfig{
 		MaxDepth:        5,
 		RequestTimeout:  10800 * time.Second,
-		Parallelism:     20,
-		IPRotationDelay: 600 * time.Second,
+		Parallelism:     10,
+		IPRotationDelay: 40 * time.Second,
 		RequestDelay:    5 * time.Second,
 		MaxRetries:      3,
 		UserAgent:       "Axora-Crawler/1.0",

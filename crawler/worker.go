@@ -56,7 +56,11 @@ func NewWorker(
 		config = DefaultConfig()
 	}
 	proxyURL, _ := url.Parse(torProxyUrl)
-	transport := &http.Transport{Proxy: http.ProxyURL(proxyURL)}
+	transport := &http.Transport{
+		Proxy:             http.ProxyURL(proxyURL),
+		DisableKeepAlives: true, // Force new connections
+		MaxIdleConns:      0,    // Don't reuse connections
+	}
 	client := &http.Client{Transport: transport}
 
 	validator := NewURLValidator(config)
