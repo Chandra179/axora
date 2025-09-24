@@ -45,8 +45,7 @@ func main() {
 	mpnetbasev2 := embedding.NewMpnetBaseV2(cfg.AllMinilmL6V2URL)
 	recurCharChunking := chunking.NewRecursiveCharacterChunking(mpnetbasev2)
 	pdfPro := file.NewPDFExtractor(logger)
-	epubPro := file.NewEPUBExtractor()
-	fp := file.NewCore(pdfPro, epubPro, cfg.DownloadPath, logger)
+	fp := file.NewCore(pdfPro, cfg.DownloadPath, logger)
 	worker, err := crawler.NewWorker(
 		qdb,
 		extractor,

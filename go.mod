@@ -3,10 +3,11 @@ module axora
 go 1.25.0
 
 require (
+	github.com/gen2brain/go-fitz v1.24.15
 	github.com/go-shiori/go-readability v0.0.0-20250217085726-9f5bf5ca7612
 	github.com/gocolly/colly/v2 v2.2.0
 	github.com/google/uuid v1.6.0
-	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
+	github.com/otiai10/gosseract/v2 v2.4.1
 	github.com/qdrant/go-client v1.15.2
 	github.com/tmc/langchaingo v0.1.13
 	go.uber.org/zap v1.27.0
@@ -22,12 +23,14 @@ require (
 	github.com/bits-and-blooms/bitset v1.24.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
+	github.com/ebitengine/purego v0.8.4 // indirect
 	github.com/go-shiori/dom v0.0.0-20230515143342-73569d674e1c // indirect
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/gogs/chardet v0.0.0-20211120154057-b7413eaefb8f // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/jupiterrider/ffi v0.5.0 // indirect
 	github.com/kennygrant/sanitize v1.2.4 // indirect
 	github.com/nlnwa/whatwg-url v0.6.2 // indirect
 	github.com/pkoukk/tiktoken-go v0.1.6 // indirect
