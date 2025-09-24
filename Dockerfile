@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y \
     pkg-config \
     libtesseract-dev \
     libleptonica-dev \
-    libjpeg62-turbo \
     libpng-dev \
     ca-certificates \
     tesseract-ocr-eng \
