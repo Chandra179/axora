@@ -10,7 +10,7 @@ func NewEPUBExtractor() *EPUBExtractor {
 
 // ExtractText extracts text content from an EPUB file
 // Implementation is left empty for now as requested
-func (e *EPUBExtractor) ExtractText(filepath string) string {
+func (e *EPUBExtractor) ExtractText(filepath string) *ExtractionResult {
 	// TODO: Implement EPUB text extraction
-	return ""
+	return nil
 }

@@ -7,31 +7,35 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"go.uber.org/zap"
 )
 
-// Core implements the TextExtractor interface
 type Core struct {
 	pdfExtractor  TextExtractor
 	epubExtractor TextExtractor
 	directoryPath string
+	logger        *zap.Logger
 }
 
-// FileResult holds the result of processing a single file
 type FileResult struct {
-	FileName      string
-	FileSize      int64
-	FileExtension string
-	ExtractedText string
-	TextLength    int
-	Error         string // Add error field to track processing issues
+	FileName      string `json:"fileName"`
+	FileSize      int64  `json:"fileSize"`
+	FileExtension string `json:"fileExtension"`
+	ExtractedText string `json:"extractedText"`
+	TextLength    int    `json:"textLength"`
+	Pages         int    `json:"pages,omitempty"`    // For PDFs
+	Chapters      int    `json:"chapters,omitempty"` // For EPUBs
+	ProcessTime   string `json:"processTime,omitempty"`
+	Error         string `json:"error,omitempty"`
 }
 
-// NewCore creates a new Core instance with the required dependencies
-func NewCore(pdfExtractor, epubExtractor TextExtractor, directoryPath string) *Core {
+func NewCore(pdfExtractor, epubExtractor TextExtractor, directoryPath string, logger *zap.Logger) *Core {
 	return &Core{
 		pdfExtractor:  pdfExtractor,
 		epubExtractor: epubExtractor,
 		directoryPath: directoryPath,
+		logger:        logger,
 	}
 }
 
@@ -41,7 +45,10 @@ func (c *Core) processFile(path string, fileInfo os.FileInfo) *FileResult {
 	extension := strings.ToLower(filepath.Ext(path))
 	fileName := fileInfo.Name()
 
-	fmt.Printf("Processing file: %s (Size: %d bytes, Extension: %s)\n", path, fileSize, extension)
+	c.logger.Info("Processing file",
+		zap.String("path", path),
+		zap.Int64("size", fileSize),
+		zap.String("extension", extension))
 
 	result := &FileResult{
 		FileName:      fileName,
@@ -53,69 +60,73 @@ func (c *Core) processFile(path string, fileInfo os.FileInfo) *FileResult {
 	defer func() {
 		if r := recover(); r != nil {
 			result.Error = fmt.Sprintf("Panic during processing: %v", r)
-			fmt.Printf("Recovered from panic while processing %s: %v\n", path, r)
+			c.logger.Error("Recovered from panic while processing file",
+				zap.String("path", path),
+				zap.Any("panic", r))
 		}
 	}()
 
-	var extractedText string
-	var err error
+	var extractionResult *ExtractionResult
 
 	switch extension {
 	case ".pdf":
 		if c.pdfExtractor != nil {
-			// Wrap the extraction in a safe call
-			extractedText, err = c.safeExtractText(c.pdfExtractor, path)
-			if err != nil {
-				result.Error = fmt.Sprintf("PDF extraction error: %v", err)
-				fmt.Printf("Error extracting PDF %s: %v\n", path, err)
-				return result
-			}
+			extractionResult = c.pdfExtractor.ExtractText(path)
 		}
 	case ".epub":
 		if c.epubExtractor != nil {
-			// Wrap the extraction in a safe call
-			extractedText, err = c.safeExtractText(c.epubExtractor, path)
-			if err != nil {
-				result.Error = fmt.Sprintf("EPUB extraction error: %v", err)
-				fmt.Printf("Error extracting EPUB %s: %v\n", path, err)
-				return result
-			}
+			extractionResult = c.epubExtractor.ExtractText(path)
 		}
 	default:
 		result.Error = fmt.Sprintf("Unsupported file type: %s", extension)
-		fmt.Printf("Unsupported file type: %s\n", extension)
+		c.logger.Warn("Unsupported file type",
+			zap.String("path", path),
+			zap.String("extension", extension))
 		return result
 	}
 
-	// Filter out failed extractions
-	if extractedText == "" {
+	if extractionResult == nil {
+		result.Error = "No extractor available for this file type"
+		return result
+	}
+
+	if !extractionResult.Success {
+		result.Error = extractionResult.Error
+		c.logger.Error("Text extraction failed",
+			zap.String("path", path),
+			zap.String("error", extractionResult.Error))
+		return result
+	}
+
+	if extractionResult.Text == "" {
 		result.Error = "No text extracted"
+		c.logger.Warn("No text content extracted",
+			zap.String("path", path))
 		return result
 	}
 
-	result.ExtractedText = extractedText
-	result.TextLength = len(extractedText)
+	result.ExtractedText = extractionResult.Text
+	result.TextLength = len(extractionResult.Text)
+	result.Pages = extractionResult.Pages
+	result.Chapters = extractionResult.Chapters
+
+	c.logger.Info("File processed successfully",
+		zap.String("path", path),
+		zap.Int("textLength", result.TextLength),
+		zap.Int("pages", result.Pages),
+		zap.Int("chapters", result.Chapters))
 
 	return result
-}
-
-// safeExtractText wraps the text extraction with panic recovery
-func (c *Core) safeExtractText(extractor TextExtractor, path string) (text string, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = fmt.Errorf("extraction panic: %v", r)
-		}
-	}()
-
-	text = extractor.ExtractText(path)
-	return text, nil
 }
 
 // ProcessFiles processes all supported files in the directory and returns structured results
 func (c *Core) ProcessFiles() []FileResult {
 	var wg sync.WaitGroup
-	resultChan := make(chan *FileResult, 100) // Buffered channel to prevent blocking
+	resultChan := make(chan *FileResult, 100)
 	var results []FileResult
+
+	c.logger.Info("Starting batch file processing",
+		zap.String("directory", c.directoryPath))
 
 	// Start a goroutine to collect results
 	done := make(chan bool)
@@ -130,6 +141,9 @@ func (c *Core) ProcessFiles() []FileResult {
 
 	err := filepath.WalkDir(c.directoryPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
+			c.logger.Error("Error walking directory",
+				zap.String("path", path),
+				zap.Error(err))
 			return err
 		}
 
@@ -138,27 +152,28 @@ func (c *Core) ProcessFiles() []FileResult {
 			return nil
 		}
 
-		// Get file info to check size
 		fileInfo, err := os.Stat(path)
 		if err != nil {
-			fmt.Printf("Error getting file info for %s: %v\n", path, err)
-			return nil // Continue processing other files
+			c.logger.Error("Error getting file info",
+				zap.String("path", path),
+				zap.Error(err))
+			return nil
 		}
 
-		// Only process supported file types
 		extension := strings.ToLower(filepath.Ext(path))
 		if extension != ".pdf" && extension != ".epub" {
 			return nil
 		}
 
-		// Add file size check to skip potentially problematic very large files
-		const maxFileSize = 50 * 1024 * 1024 // 50MB limit
+		const maxFileSize = 50 * 1024 * 1024
 		if fileInfo.Size() > maxFileSize {
-			fmt.Printf("Skipping large file %s (size: %d bytes)\n", path, fileInfo.Size())
+			c.logger.Warn("Skipping large file",
+				zap.String("path", path),
+				zap.Int64("size", fileInfo.Size()),
+				zap.Int64("maxSize", maxFileSize))
 			return nil
 		}
 
-		// Launch a goroutine for each supported file
 		wg.Add(1)
 		go func(filePath string, info os.FileInfo) {
 			defer wg.Done()
@@ -170,7 +185,9 @@ func (c *Core) ProcessFiles() []FileResult {
 	})
 
 	if err != nil {
-		fmt.Printf("Error walking directory: %v\n", err)
+		c.logger.Error("Error walking directory",
+			zap.String("directory", c.directoryPath),
+			zap.Error(err))
 		return []FileResult{}
 	}
 
@@ -180,6 +197,15 @@ func (c *Core) ProcessFiles() []FileResult {
 
 	// Wait for result collection to complete
 	<-done
+
+	successful := c.GetSuccessfulResults(results)
+	failed := c.GetFailedResults(results)
+
+	c.logger.Info("Batch processing completed",
+		zap.String("directory", c.directoryPath),
+		zap.Int("totalFiles", len(results)),
+		zap.Int("successful", len(successful)),
+		zap.Int("failed", len(failed)))
 
 	return results
 }
@@ -204,4 +230,38 @@ func (c *Core) GetFailedResults(results []FileResult) []FileResult {
 		}
 	}
 	return failed
+}
+
+// GetProcessingStats returns statistics about the processing results
+func (c *Core) GetProcessingStats(results []FileResult) map[string]interface{} {
+	successful := c.GetSuccessfulResults(results)
+	failed := c.GetFailedResults(results)
+
+	totalSize := int64(0)
+	totalTextLength := 0
+	totalPages := 0
+	totalChapters := 0
+
+	for _, result := range successful {
+		totalSize += result.FileSize
+		totalTextLength += result.TextLength
+		totalPages += result.Pages
+		totalChapters += result.Chapters
+	}
+
+	stats := map[string]interface{}{
+		"totalFiles":      len(results),
+		"successfulFiles": len(successful),
+		"failedFiles":     len(failed),
+		"successRate":     float64(len(successful)) / float64(len(results)) * 100,
+		"totalFileSize":   totalSize,
+		"totalTextLength": totalTextLength,
+		"totalPages":      totalPages,
+		"totalChapters":   totalChapters,
+	}
+
+	c.logger.Info("Processing statistics",
+		zap.Any("stats", stats))
+
+	return stats
 }

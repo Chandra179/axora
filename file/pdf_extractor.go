@@ -2,144 +2,151 @@ package file
 
 import (
 	"fmt"
-	"io"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/ledongthuc/pdf"
+	"go.uber.org/zap"
 )
 
-type PDFExtractor struct{}
-
-func NewPDFExtractor() *PDFExtractor {
-	return &PDFExtractor{}
+type PDFExtractor struct {
+	logger *zap.Logger
 }
 
-func (p *PDFExtractor) validatePDFFile(filepath string) error {
+func NewPDFExtractor(logger *zap.Logger) *PDFExtractor {
+	return &PDFExtractor{
+		logger: logger,
+	}
+}
+
+func (p *PDFExtractor) ExtractText(filepath string) *ExtractionResult {
+	result := &ExtractionResult{
+		FilePath: filepath,
+		Success:  false,
+	}
+
+	if err := p.validateFile(filepath); err != nil {
+		result.Error = fmt.Sprintf("File validation failed: %v", err)
+		p.logger.Error("PDF file validation failed",
+			zap.String("filepath", filepath),
+			zap.Error(err))
+		return result
+	}
+
+	f, r, err := pdf.Open(filepath)
+	if err != nil {
+		result.Error = fmt.Sprintf("Error opening PDF file: %v", err)
+		p.logger.Error("Failed to open PDF file",
+			zap.String("filepath", filepath),
+			zap.Error(err))
+		return result
+	}
+	defer f.Close()
+
+	totalPages := r.NumPage()
+	result.Pages = totalPages
+
+	var textBuilder strings.Builder
+	extractedPages := 0
+
+	for i := 1; i <= totalPages; i++ {
+		pageText, err := p.extractPageText(r, i)
+		if err != nil {
+			p.logger.Warn("Failed to extract text from page",
+				zap.String("filepath", filepath),
+				zap.Int("page", i),
+				zap.Error(err))
+			continue
+		}
+
+		if pageText != "" {
+			textBuilder.WriteString(pageText)
+			extractedPages++
+		}
+	}
+
+	extractedText := strings.TrimSpace(textBuilder.String())
+	extractedText = p.removePageNumbers(extractedText)
+	extractedText = p.cleanText(extractedText)
+
+	result.Text = extractedText
+	result.Success = true
+
+	p.logger.Info("Extracted text sample",
+		zap.String("filepath", result.FilePath),
+		zap.String("text_sample", extractedText[:1000]+"..."),
+		zap.Int("full_text_length", len(result.Text)))
+	return result
+}
+
+func (p *PDFExtractor) validateFile(filepath string) error {
+	if filepath == "" {
+		return fmt.Errorf("filepath cannot be empty")
+	}
+
 	file, err := os.Open(filepath)
 	if err != nil {
 		return fmt.Errorf("cannot open file: %v", err)
 	}
 	defer file.Close()
 
-	fileInfo, err := file.Stat()
-	if err != nil {
-		return fmt.Errorf("cannot get file info: %v", err)
-	}
-
-	if fileInfo.Size() == 0 {
-		return fmt.Errorf("file is empty")
-	}
-
-	// Check PDF header
-	header := make([]byte, 4)
-	_, err = file.Read(header)
+	// Check if it's actually a PDF file (basic check)
+	buffer := make([]byte, 4)
+	_, err = file.Read(buffer)
 	if err != nil {
 		return fmt.Errorf("cannot read file header: %v", err)
 	}
 
-	if string(header) != "%PDF" {
-		return fmt.Errorf("not a valid PDF file (missing PDF header)")
-	}
-
-	// Check for PDF trailer (EOF marker)
-	// Seek to near the end of file to check for %%EOF
-	seekPos := fileInfo.Size() - 1024
-	if seekPos < 0 {
-		seekPos = 0
-	}
-
-	_, err = file.Seek(seekPos, io.SeekStart)
-	if err != nil {
-		return fmt.Errorf("cannot seek in file: %v", err)
-	}
-
-	buffer := make([]byte, 1024)
-	n, err := file.Read(buffer)
-	if err != nil && err != io.EOF {
-		return fmt.Errorf("cannot read end of file: %v", err)
-	}
-
-	endContent := string(buffer[:n])
-	if !strings.Contains(endContent, "%%EOF") {
-		return fmt.Errorf("PDF file appears to be truncated (missing %%EOF)")
+	if string(buffer) != "%PDF" {
+		return fmt.Errorf("file does not appear to be a PDF")
 	}
 
 	return nil
 }
 
-// ExtractText extracts text content from a PDF file with robust error handling
-func (p *PDFExtractor) ExtractText(filepath string) string {
-	if err := p.validatePDFFile(filepath); err != nil {
-		return fmt.Sprintf("PDF validation failed for %s: %v", filepath, err)
+func (p *PDFExtractor) extractPageText(reader *pdf.Reader, pageNum int) (string, error) {
+	page := reader.Page(pageNum)
+	if page.V.IsNull() {
+		return "", fmt.Errorf("page %d is null", pageNum)
 	}
 
-	// Use defer and recover to handle panics
-	defer func() {
-		if r := recover(); r != nil {
-			fmt.Printf("Recovered from panic while processing %s: %v\n", filepath, r)
-		}
-	}()
-
-	f, r, err := pdf.Open(filepath)
+	content, err := page.GetPlainText(nil)
 	if err != nil {
-		return fmt.Sprintf("Error opening PDF file %s: %v", filepath, err)
-	}
-	defer func() {
-		if f != nil {
-			f.Close()
-		}
-	}()
-
-	var textBuilder strings.Builder
-	totalPages := r.NumPage()
-
-	// Extract text from each page with individual error handling
-	for pageIndex := 1; pageIndex <= totalPages; pageIndex++ {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					fmt.Printf("Error processing page %d of %s: %v\n", pageIndex, filepath, r)
-				}
-			}()
-
-			page := r.Page(pageIndex)
-			if page.V.IsNull() {
-				return
-			}
-
-			// Get text content from the page
-			content := page.Content()
-			texts := content.Text
-			if len(texts) == 0 {
-				return
-			}
-
-			// Process text elements
-			for i, text := range texts {
-				if text.S == "" {
-					continue
-				}
-
-				textBuilder.WriteString(text.S)
-
-				// Add space between text elements
-				if i < len(texts)-1 && !strings.HasSuffix(text.S, " ") {
-					nextText := texts[i+1].S
-					if nextText != "" && !strings.HasPrefix(nextText, " ") {
-						textBuilder.WriteString(" ")
-					}
-				}
-			}
-
-			textBuilder.WriteString("\n")
-		}()
+		return "", fmt.Errorf("failed to get plain text: %v", err)
 	}
 
-	extractedText := strings.TrimSpace(textBuilder.String())
-	if extractedText == "" {
-		return fmt.Sprintf("No text content found in PDF file: %s", filepath)
+	return strings.TrimSpace(content), nil
+}
+
+func (p *PDFExtractor) removePageNumbers(text string) string {
+	// Common page number patterns
+	patterns := []string{
+		`(?m)^\s*\d+\s*$`,                   // Standalone numbers on their own line
+		`(?m)^\s*Page\s+\d+\s*$`,            // "Page X" format
+		`(?m)^\s*-\s*\d+\s*-\s*$`,           // "-X-" format
+		`(?m)^\s*\d+\s*/\s*\d+\s*$`,         // "X/Y" format
+		`(?m)^\s*\[\s*\d+\s*\]\s*$`,         // "[X]" format
+		`(?m)^\s*Page\s+\d+\s+of\s+\d+\s*$`, // "Page X of Y" format
 	}
 
-	return extractedText
+	result := text
+	for _, pattern := range patterns {
+		re := regexp.MustCompile(pattern)
+		result = re.ReplaceAllString(result, "")
+	}
+
+	return result
+}
+
+func (p *PDFExtractor) cleanText(text string) string {
+	re := regexp.MustCompile(`\n\s*\n\s*\n`)
+	text = re.ReplaceAllString(text, "\n\n")
+
+	lines := strings.Split(text, "\n")
+	for i, line := range lines {
+		lines[i] = strings.TrimRight(line, " \t")
+	}
+
+	return strings.Join(lines, "\n")
 }
