@@ -2,10 +2,15 @@ package file
 
 import (
 	"bytes"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"image/png"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
 
 	"github.com/gen2brain/go-fitz"
 	"github.com/otiai10/gosseract/v2"
@@ -19,13 +24,27 @@ type PDFExtractor struct {
 
 func NewPDFExtractor(logger *zap.Logger) *PDFExtractor {
 	client := gosseract.NewClient()
+	client.SetLanguage("eng")
 	client.SetVariable("tessedit_ocr_engine_mode", "1")
-	client.SetVariable("tessedit_pageseg_mode", "1")
-	client.SetVariable("tessedit_char_blacklist", "")
+	client.SetVariable("tessedit_pageseg_mode", "6")
+
+	// Noise control
+	client.SetVariable("textord_noise_normratio", "0.5")
+	client.SetVariable("textord_noise_sizelimit", "0.3")
+	client.SetVariable("textord_heavy_nr", "1")
+
+	// Character control
+	client.SetVariable("classify_enable_learning", "0") // deterministic
+	client.SetVariable("tessedit_write_block_separators", "0")
+
+	// Reject garbage
+	client.SetVariable("tessedit_reject_block_percent", "80")
+	client.SetVariable("tessedit_minimal_rejection", "1")
+	client.SetVariable("tessedit_reject_mode", "0")
+
+	// Misc
 	client.SetVariable("tessedit_do_invert", "0")
-	client.SetVariable("classify_enable_learning", "0")
-	client.SetVariable("textord_noise_normratio", "2")
-	client.SetVariable("textord_noise_sizelimit", "0.5")
+	client.SetVariable("textord_tablefind_recognize_tables", "0")
 
 	return &PDFExtractor{
 		logger:          logger,
@@ -65,6 +84,15 @@ func (p *PDFExtractor) ExtractText(fp string) {
 			continue
 		}
 
+		if pageNum < 3 {
+			if err := p.savePNGToDisk(buf.Bytes(), fp, pageNum); err != nil {
+				p.logger.Error("Failed to save PNG to disk",
+					zap.String("file", fp),
+					zap.Int("page", pageNum+1),
+					zap.Error(err))
+			}
+		}
+
 		if err := p.gosseractClient.SetImageFromBytes(buf.Bytes()); err != nil {
 			p.logger.Error("Failed to set image for OCR",
 				zap.String("file", fp),
@@ -81,16 +109,44 @@ func (p *PDFExtractor) ExtractText(fp string) {
 				zap.Int("page", pageNum+1),
 				zap.Error(err))
 		} else {
+			cleanTxt := cleanOCR(text)
 			p.logger.Info("OCR result",
 				zap.String("file", fp),
 				zap.Int("page", pageNum+1),
-				zap.String("text", text))
+				zap.String("text", cleanTxt))
 		}
 
 		img = nil
 		grayImg = nil
 		processedImg = nil
 	}
+}
+
+func (p *PDFExtractor) savePNGToDisk(pngData []byte, originalFilePath string, pageNum int) error {
+	outputDir := filepath.Join("/app/downloads/temp")
+
+	if err := os.MkdirAll(outputDir, 0755); err != nil {
+		return fmt.Errorf("failed to create output directory: %w", err)
+	}
+
+	outputPath := filepath.Join(outputDir, fmt.Sprintf("page_%03d.png", pageNum+1))
+
+	file, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create PNG file: %w", err)
+	}
+	defer file.Close()
+
+	if _, err := file.Write(pngData); err != nil {
+		return fmt.Errorf("failed to write PNG data: %w", err)
+	}
+
+	p.logger.Info("Saved processed PNG",
+		zap.String("output", outputPath),
+		zap.Int("page", pageNum+1),
+		zap.Int("size_bytes", len(pngData)))
+
+	return nil
 }
 
 // Convert image to grayscale for better OCR performance
@@ -146,4 +202,40 @@ func (p *PDFExtractor) enhanceContrast(src image.Image) image.Image {
 	}
 
 	return enhanced
+}
+
+func cleanOCR(input string) string {
+	text := input
+
+	// 1. Fix hyphenated line breaks: "gov-\nernment" → "government"
+	reHyphen := regexp.MustCompile(`(\w)-\n(\w)`)
+	text = reHyphen.ReplaceAllString(text, "$1$2")
+
+	// 2. Replace all newlines with spaces (flatten for embeddings)
+	text = strings.ReplaceAll(text, "\n", " ")
+
+	// 3. Remove headers/footers: ALL CAPS + page numbers
+	reHeader := regexp.MustCompile(`\b[A-Z\s]{3,}\s*\d+\b`)
+	text = reHeader.ReplaceAllString(text, " ")
+
+	// 4. Remove figure/table references
+	reFigure := regexp.MustCompile(`\b(Figure|Table)\s*\d+[-–]?\d*\b`)
+	text = reFigure.ReplaceAllString(text, " ")
+
+	// 5. Remove margin notes like QUICK QUIZ, APPENDIX, CASE STUDY
+	reMargin := regexp.MustCompile(`\b(QUICK QUIZ|SUMMARY|APPENDIX|CASE STUDY)\b.*`)
+	text = reMargin.ReplaceAllString(text, " ")
+
+	// 8. Remove OCR artifacts (®, ©, ™, bullets, etc.)
+	reArtifacts := regexp.MustCompile(`[®©™•▪●►■□▪¤]+`)
+	text = reArtifacts.ReplaceAllString(text, " ")
+
+	// 9. Remove chart/axis junk: lines of mostly | / \ - + = ~
+	reAxis := regexp.MustCompile(`[|/\-+=~]{2,}`)
+	text = reAxis.ReplaceAllString(text, " ")
+
+	// 11. Trim
+	text = strings.TrimSpace(text)
+
+	return text
 }
