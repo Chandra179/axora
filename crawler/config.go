@@ -42,6 +42,8 @@ func DefaultConfig() *CrawlerConfig {
 			"md5",
 			"downloadname",
 			"key",
+			"ext",
+			"curtab",
 		},
 		AllowedSchemes: []string{"https"},
 		IPCheckServices: []string{

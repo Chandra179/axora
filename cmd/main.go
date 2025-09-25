@@ -45,7 +45,8 @@ func main() {
 	mpnetbasev2 := embedding.NewMpnetBaseV2(cfg.AllMinilmL6V2URL)
 	recurCharChunking := chunking.NewRecursiveCharacterChunking(mpnetbasev2)
 	pdfPro := file.NewPDFExtractor(logger)
-	fp := file.NewCore(pdfPro, cfg.DownloadPath, logger)
+	epubPro := file.NewEpubExtractor(logger)
+	fp := file.NewCore(pdfPro, epubPro, cfg.DownloadPath, logger)
 	worker, err := crawler.NewWorker(
 		qdb,
 		extractor,
@@ -66,10 +67,10 @@ func main() {
 	go func() {
 		fp.ProcessFiles()
 	}()
+	fmt.Println("Running")
 	http.Handle("/scrap", Crawl(worker, mpnetbasev2))
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil))
 
-	fmt.Println("Running")
 }
 
 func Crawl(worker *crawler.Worker, embed embedding.Client) http.HandlerFunc {
@@ -82,7 +83,7 @@ func Crawl(worker *crawler.Worker, embed embedding.Client) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Hour)
 		defer cancel()
 
-		worker.Crawl(ctx, []string{"https://libgen.li/index.php?req=" + query})
+		worker.Crawl(ctx, []string{"https://libgen.li/index.php?req=" + query + "+ext:epub"})
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Crawl started"))
 	}

@@ -10,13 +10,15 @@ import (
 
 type Core struct {
 	pdfExtractor  TextExtractor
+	epubExtractor TextExtractor
 	directoryPath string
 	logger        *zap.Logger
 }
 
-func NewCore(pdfExtractor TextExtractor, directoryPath string, logger *zap.Logger) *Core {
+func NewCore(pdfExtractor, epubExtractor TextExtractor, directoryPath string, logger *zap.Logger) *Core {
 	return &Core{
 		pdfExtractor:  pdfExtractor,
+		epubExtractor: epubExtractor,
 		directoryPath: directoryPath,
 		logger:        logger,
 	}
@@ -27,6 +29,8 @@ func (c *Core) processFile(path string) {
 	switch extension {
 	case ".pdf":
 		c.pdfExtractor.ExtractText(path)
+	case ".epub":
+		c.epubExtractor.ExtractText(path)
 	default:
 	}
 
