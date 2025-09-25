@@ -34,6 +34,10 @@ func (w *Worker) OnHTML(ctx context.Context) colly.HTMLCallback {
 			return
 		}
 
+		if curtab := u.Query().Get("curtab"); curtab != "" && curtab != "f" {
+			return
+		}
+
 		if !w.validator.IsValidDownloadURL(u) {
 			return
 		}

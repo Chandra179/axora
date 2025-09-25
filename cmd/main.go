@@ -83,7 +83,7 @@ func Crawl(worker *crawler.Worker, embed embedding.Client) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Hour)
 		defer cancel()
 
-		worker.Crawl(ctx, []string{"https://libgen.li/index.php?req=" + query + "+ext:epub"})
+		worker.Crawl(ctx, []string{"https://libgen.li/index.php?req=" + query + "+ext:epub&curtab=f"})
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Crawl started"))
 	}

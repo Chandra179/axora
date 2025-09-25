@@ -22,11 +22,11 @@ type CrawlerConfig struct {
 // DefaultConfig returns a default crawler configuration
 func DefaultConfig() *CrawlerConfig {
 	return &CrawlerConfig{
-		MaxDepth:        5,
+		MaxDepth:        3,
 		RequestTimeout:  10800 * time.Second,
 		Parallelism:     10,
 		IPRotationDelay: 40 * time.Second,
-		RequestDelay:    5 * time.Second,
+		RequestDelay:    3 * time.Second,
 		MaxRetries:      3,
 		UserAgent:       "Axora-Crawler/1.0",
 		MaxURLVisits:    3,
@@ -52,13 +52,4 @@ func DefaultConfig() *CrawlerConfig {
 			"https://icanhazip.com",
 		},
 	}
-}
-
-// GetAllowedParamsMap returns allowed parameters as a map for faster lookup
-func (c *CrawlerConfig) GetAllowedParamsMap() map[string]bool {
-	paramsMap := make(map[string]bool, len(c.AllowedParams))
-	for _, param := range c.AllowedParams {
-		paramsMap[param] = true
-	}
-	return paramsMap
 }

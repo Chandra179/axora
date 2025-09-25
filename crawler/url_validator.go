@@ -7,7 +7,7 @@ import (
 
 type URLValidator struct {
 	allowedPaths   []string
-	allowedParams  map[string]bool
+	allowedParams  []string
 	allowedSchemes []string
 }
 
@@ -15,29 +15,29 @@ type URLValidator struct {
 func NewURLValidator(config *CrawlerConfig) *URLValidator {
 	return &URLValidator{
 		allowedPaths:   config.AllowedPaths,
-		allowedParams:  config.GetAllowedParamsMap(),
+		allowedParams:  config.AllowedParams,
 		allowedSchemes: config.AllowedSchemes,
 	}
 }
 
 // IsValidDownloadURL validates URL according to the specification
 func (v *URLValidator) IsValidDownloadURL(u *url.URL) bool {
-	if u.Host == "" {
-		return false
+	if u.Host != "" {
+		return true
 	}
-	if !slices.Contains(v.allowedSchemes, u.Scheme) {
-		return false
+	if slices.Contains(v.allowedSchemes, u.Scheme) {
+		return true
 	}
 
-	if !slices.Contains(v.allowedPaths, u.Path) {
-		return false
+	if slices.Contains(v.allowedPaths, u.Path) {
+		return true
 	}
 
 	for param := range u.Query() {
-		if !v.allowedParams[param] {
-			return false
+		if slices.Contains(v.allowedParams, param) {
+			return true
 		}
 	}
 
-	return true
+	return false
 }
