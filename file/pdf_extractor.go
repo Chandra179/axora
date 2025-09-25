@@ -20,8 +20,12 @@ type PDFExtractor struct {
 func NewPDFExtractor(logger *zap.Logger) *PDFExtractor {
 	client := gosseract.NewClient()
 	client.SetVariable("tessedit_ocr_engine_mode", "1")
-	client.SetVariable("tessedit_pageseg_mode", "6")
+	client.SetVariable("tessedit_pageseg_mode", "1")
 	client.SetVariable("tessedit_char_blacklist", "")
+	client.SetVariable("tessedit_do_invert", "0")
+	client.SetVariable("classify_enable_learning", "0")
+	client.SetVariable("textord_noise_normratio", "2")
+	client.SetVariable("textord_noise_sizelimit", "0.5")
 
 	return &PDFExtractor{
 		logger:          logger,
@@ -36,13 +40,10 @@ func (p *PDFExtractor) ExtractText(fp string) {
 		return
 	}
 	defer doc.Close()
-
 	totalPages := doc.NumPage()
 
 	for pageNum := 0; pageNum < totalPages; pageNum++ {
 		img, err := doc.ImageDPI(pageNum, 300)
-		defer func() { img = nil }()
-
 		if err != nil {
 			p.logger.Error("Failed to convert page to image",
 				zap.String("file", fp),
@@ -85,6 +86,10 @@ func (p *PDFExtractor) ExtractText(fp string) {
 				zap.Int("page", pageNum+1),
 				zap.String("text", text))
 		}
+
+		img = nil
+		grayImg = nil
+		processedImg = nil
 	}
 }
 
