@@ -19,7 +19,7 @@ import (
 const maxFilenameLength = 100
 
 // DownloadFile downloads a file from the given URL to the specified path
-func (w *Worker) DownloadFile(ctx context.Context, url, filename, expectedMD5 string) error {
+func (w *Crawler) DownloadFile(ctx context.Context, url, filename, expectedMD5 string) error {
 	w.logger.Info("start download")
 	if expectedMD5 == "" {
 		return nil
@@ -89,7 +89,7 @@ func (w *Worker) DownloadFile(ctx context.Context, url, filename, expectedMD5 st
 }
 
 // ValidateDownload verifies the MD5 hash of a downloaded file
-func (w *Worker) ValidateDownload(filePath, expectedMD5 string) error {
+func (w *Crawler) ValidateDownload(filePath, expectedMD5 string) error {
 	if expectedMD5 == "" {
 		return errors.New("md5 required: " + expectedMD5)
 	}

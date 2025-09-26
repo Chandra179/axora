@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"net/http"
 	"net/url"
+	"regexp"
 	"time"
 
 	"axora/pkg/chunking"
@@ -22,16 +23,10 @@ type CrawlerConfig struct {
 	IPRotationDelay time.Duration
 	RequestDelay    time.Duration
 	MaxRetries      int
-	UserAgent       string
 	MaxURLVisits    int
-	AllowedPaths    []string
-	AllowedParams   []string
-	AllowedSchemes  []string
-	AllowedHosts    []string // New field for host filtering
 	IPCheckServices []string
 }
 
-// DefaultConfig returns a default crawler configuration
 func DefaultConfig() *CrawlerConfig {
 	return &CrawlerConfig{
 		MaxDepth:        3,
@@ -40,28 +35,7 @@ func DefaultConfig() *CrawlerConfig {
 		IPRotationDelay: 40 * time.Second,
 		RequestDelay:    5 * time.Second,
 		MaxRetries:      3,
-		UserAgent:       "Axora-Crawler/1.0",
 		MaxURLVisits:    1,
-		AllowedPaths: []string{
-			"/index.php",
-			"/edition.php",
-			"/ads.php",
-			"/get.php",
-		},
-		AllowedParams: []string{
-			"req",
-			"id",
-			"md5",
-			"downloadname",
-			"key",
-			"ext",
-			"curtab",
-		},
-		AllowedSchemes: []string{"https"},
-		AllowedHosts: []string{
-			"libgen.li",
-			"*.booksdl.lc", // Using wildcard pattern for cdn subdomains
-		},
 		IPCheckServices: []string{
 			"https://httpbin.org/ip",
 			"https://api.ipify.org?format=text",
@@ -78,12 +52,11 @@ const (
 	LinkID       ContextKey = "link_id"
 )
 
-type Worker struct {
+type Crawler struct {
 	collector       *colly.Collector
 	chunker         chunking.ChunkingClient
 	crawlVectorRepo repository.CrawlVectorRepo
 	extractor       *ContentExtractor
-	validator       *URLValidator
 	config          *CrawlerConfig
 	logger          *zap.Logger
 	maxRetries      int
@@ -96,7 +69,6 @@ type Worker struct {
 	delay           time.Duration
 }
 
-// NewCrawler creates a new crawler worker with all dependencies
 func NewCrawler(
 	crawlVectorRepo repository.CrawlVectorRepo,
 	extractor *ContentExtractor,
@@ -106,26 +78,28 @@ func NewCrawler(
 	downloadPath string,
 	logger *zap.Logger,
 	config *CrawlerConfig,
-) (*Worker, error) {
+) (*Crawler, error) {
 	if config == nil {
 		config = DefaultConfig()
 	}
 	proxyURL, _ := url.Parse(torProxyUrl)
 	transport := &http.Transport{
 		Proxy:             http.ProxyURL(proxyURL),
-		DisableKeepAlives: true, // Force new connections
-		MaxIdleConns:      0,    // Don't reuse connections
+		DisableKeepAlives: true,
 	}
 	client := &http.Client{Transport: transport}
 
-	validator := NewURLValidator(config)
-
 	c := colly.NewCollector(
-		colly.UserAgent(config.UserAgent),
+		colly.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "+
+			"(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
 		colly.MaxDepth(config.MaxDepth),
 		colly.Async(true),
 		colly.TraceHTTP(),
 		colly.ParseHTTPErrorResponse(),
+		colly.URLFilters(
+			regexp.MustCompile(`^https://libgen\.li(?:/(?:index\.php|edition\.php|ads\.php|get\.php))?(?:\?(?:.*(?:req|id|md5|downloadname|key|ext)=.*)?)?$`),
+			regexp.MustCompile(`^https://[^.]+\.booksdl\.lc(?:/(?:index\.php|edition\.php|ads\.php|get\.php))?(?:\?(?:.*(?:id|md5)=.*)?)?$`),
+		),
 		// colly.Debugger(&debug.LogDebugger{}),
 	)
 	c.WithTransport(transport)
@@ -137,12 +111,11 @@ func NewCrawler(
 		Delay:       config.RequestDelay,
 	})
 
-	worker := &Worker{
+	worker := &Crawler{
 		collector:       c,
 		chunker:         chunker,
 		crawlVectorRepo: crawlVectorRepo,
 		extractor:       extractor,
-		validator:       validator,
 		config:          config,
 		logger:          logger,
 		maxRetries:      config.MaxRetries,
@@ -158,8 +131,7 @@ func NewCrawler(
 	return worker, nil
 }
 
-// Crawl starts crawling the provided URLs
-func (w *Worker) Crawl(ctx context.Context, urls []string) error {
+func (w *Crawler) Crawl(ctx context.Context, urls []string) error {
 	contextId := GenerateContextID()
 	ip := w.GetPublicIP(ctx)
 	ctx = context.WithValue(ctx, ContextIDKey, contextId)
@@ -184,8 +156,7 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) error {
 	return nil
 }
 
-// setupEventHandlers configures all colly event handlers
-func (w *Worker) setupEventHandlers(ctx context.Context) {
+func (w *Crawler) setupEventHandlers(ctx context.Context) {
 	w.collector.OnHTML("a[href]", w.OnHTML(ctx))
 	w.collector.OnError(w.OnError(ctx, w.collector))
 	w.collector.OnResponse(w.OnResponse(ctx))

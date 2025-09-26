@@ -11,7 +11,7 @@ import (
 )
 
 // GetPublicIP makes a request to check the current public IP being used
-func (w *Worker) GetPublicIP(ctx context.Context) string {
+func (w *Crawler) GetPublicIP(ctx context.Context) string {
 	for _, service := range w.iPCheckServices {
 		ip, err := w.checkService(ctx, service)
 		if err != nil {
@@ -34,7 +34,7 @@ func (w *Worker) GetPublicIP(ctx context.Context) string {
 }
 
 // checkService checks IP using a specific service
-func (w *Worker) checkService(ctx context.Context, service string) (string, error) {
+func (w *Crawler) checkService(ctx context.Context, service string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", service, nil)
 	if err != nil {
 		return "", err
@@ -60,7 +60,7 @@ func (w *Worker) checkService(ctx context.Context, service string) (string, erro
 }
 
 // parseIPResponse parses the IP from different service response formats
-func (w *Worker) parseIPResponse(service, response string) string {
+func (w *Crawler) parseIPResponse(service, response string) string {
 	ipStr := strings.TrimSpace(response)
 
 	if strings.Contains(service, "httpbin") {
