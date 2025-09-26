@@ -24,12 +24,12 @@ func DefaultConfig() *CrawlerConfig {
 	return &CrawlerConfig{
 		MaxDepth:        3,
 		RequestTimeout:  10800 * time.Second,
-		Parallelism:     10,
+		Parallelism:     100,
 		IPRotationDelay: 40 * time.Second,
 		RequestDelay:    3 * time.Second,
 		MaxRetries:      3,
 		UserAgent:       "Axora-Crawler/1.0",
-		MaxURLVisits:    3,
+		MaxURLVisits:    1,
 		AllowedPaths: []string{
 			"/index.php",
 			"/edition.php",

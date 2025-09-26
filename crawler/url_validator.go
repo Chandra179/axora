@@ -22,20 +22,19 @@ func NewURLValidator(config *CrawlerConfig) *URLValidator {
 
 // IsValidDownloadURL validates URL according to the specification
 func (v *URLValidator) IsValidDownloadURL(u *url.URL) bool {
-	if u.Host != "" {
-		return true
-	}
+	res := u.Host != ""
+
 	if slices.Contains(v.allowedSchemes, u.Scheme) {
-		return true
+		res = res && true
 	}
 
 	if slices.Contains(v.allowedPaths, u.Path) {
-		return true
+		return res && true
 	}
 
 	for param := range u.Query() {
 		if slices.Contains(v.allowedParams, param) {
-			return true
+			return res && true
 		}
 	}
 

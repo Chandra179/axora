@@ -20,6 +20,7 @@ type ContextKey string
 const (
 	ContextIDKey ContextKey = "context_id"
 	IPKey        ContextKey = "ip"
+	LinkID       ContextKey = "link_id"
 )
 
 type Worker struct {
