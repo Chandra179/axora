@@ -29,7 +29,6 @@ type Worker struct {
 	crawlVectorRepo repository.CrawlVectorRepo
 	extractor       *ContentExtractor
 	validator       *URLValidator
-	visitTracker    *VisitTracker
 	config          *CrawlerConfig
 	logger          *zap.Logger
 	maxRetries      int
@@ -65,7 +64,6 @@ func NewWorker(
 	client := &http.Client{Transport: transport}
 
 	validator := NewURLValidator(config)
-	visitTracker := NewVisitTracker(config.MaxURLVisits)
 
 	c := colly.NewCollector(
 		colly.UserAgent(config.UserAgent),
@@ -90,7 +88,6 @@ func NewWorker(
 		crawlVectorRepo: crawlVectorRepo,
 		extractor:       extractor,
 		validator:       validator,
-		visitTracker:    visitTracker,
 		config:          config,
 		logger:          logger,
 		maxRetries:      config.MaxRetries,
@@ -127,16 +124,13 @@ func (w *Worker) Crawl(ctx context.Context, urls []string) error {
 		}
 	}
 	w.collector.Wait()
-	w.logger.Info("Crawl session completed",
-		zap.Int("total_visits", w.visitTracker.GetTotalVisits()),
-		zap.Int("unique_urls", w.visitTracker.GetUniqueURLsCount()))
+	w.logger.Info("Crawl session completed")
 
 	return nil
 }
 
 // setupEventHandlers configures all colly event handlers
 func (w *Worker) setupEventHandlers(ctx context.Context) {
-	w.collector.OnRequest(w.OnRequest(ctx))
 	w.collector.OnHTML("a[href]", w.OnHTML(ctx))
 	w.collector.OnError(w.OnError(ctx, w.collector))
 	w.collector.OnResponse(w.OnResponse(ctx))
