@@ -2,7 +2,6 @@ package crawler
 
 import (
 	"context"
-	"net/url"
 	"strings"
 	"time"
 
@@ -15,6 +14,26 @@ func (w *Worker) OnRequest(ctx context.Context) colly.RequestCallback {
 	return func(r *colly.Request) {
 		r.Ctx.Put(string(ContextIDKey), ctx.Value(ContextIDKey).(string))
 		r.Ctx.Put(string(IPKey), ctx.Value(IPKey).(string))
+		retryCount := r.Ctx.GetAny("retryCount")
+
+		if retryCount == nil {
+			r.Ctx.Put("retryCount", 0)
+		}
+		rc := r.Ctx.GetAny("retryCount").(int)
+		if rc > w.maxRetries {
+			r.Abort()
+			return
+		}
+
+		if !w.validator.IsValidDownloadURL(r.URL) {
+			r.Abort()
+			return
+		}
+
+		if !w.visitTracker.ShouldVisit(r.URL.String()) {
+			r.Abort()
+			return
+		}
 
 		w.visitTracker.RecordVisit(r.URL.String())
 	}
@@ -25,22 +44,6 @@ func (w *Worker) OnHTML(ctx context.Context) colly.HTMLCallback {
 	return func(e *colly.HTMLElement) {
 		link := e.Attr("href")
 		absoluteURL := e.Request.AbsoluteURL(link)
-
-		u, err := url.ParseRequestURI(absoluteURL)
-		if err != nil {
-			w.logger.Debug("Failed to parse URL",
-				zap.String("url", absoluteURL),
-				zap.Error(err))
-			return
-		}
-
-		if !w.validator.IsValidDownloadURL(u) {
-			return
-		}
-
-		if !w.visitTracker.ShouldVisit(absoluteURL) {
-			return
-		}
 
 		e.Request.Visit(absoluteURL)
 	}
@@ -53,32 +56,20 @@ func (w *Worker) OnError(ctx context.Context, collector *colly.Collector) colly.
 			w.logger.Error("Request failed", zap.Error(err))
 			return
 		}
-
-		ip := w.GetPublicIP(ctx)
 		retryCount := r.Ctx.GetAny("retryCount")
 		if retryCount == nil {
-			r.Ctx.Put("retryCount", 0)
-			retryCount = 0
+			w.logger.Error("retry count should not be empty")
 		}
 		rc := r.Ctx.GetAny("retryCount").(int)
-		if rc > w.maxRetries {
-			return
-		}
-
-		time.Sleep(w.config.IPRotationDelay)
-		w.logger.Error("HTTP error",
-			zap.String("url", r.Request.URL.String()),
-			zap.Int("status_code", r.StatusCode),
-			zap.Int("retry_count", rc),
-			zap.String("ip", ip),
-			zap.Error(err))
 
 		rc = rc + 1
+		r.Ctx.Put("retryCount", rc)
+
 		w.logger.Info("Retrying request",
 			zap.String("url", r.Request.URL.String()),
 			zap.Int("retry_attempt", rc))
 
-		r.Ctx.Put("retryCount", rc)
+		time.Sleep(w.config.IPRotationDelay)
 		err = collector.Request("GET", r.Request.URL.String(), nil, r.Ctx, nil)
 		if err != nil {
 			w.logger.Error("Failed to resubmit request",
@@ -91,10 +82,7 @@ func (w *Worker) OnError(ctx context.Context, collector *colly.Collector) colly.
 // OnResponse handles successful responses and downloads
 func (w *Worker) OnResponse(ctx context.Context) colly.ResponseCallback {
 	return func(r *colly.Response) {
-		w.logger.Info("response received",
-			zap.String("url", r.Request.URL.String()),
-			zap.String("content_type", r.Headers.Get("Content-Type")))
-
+		w.logger.Info("onresponse: " + r.Request.URL.String())
 		contentType := r.Headers.Get("Content-Type")
 		contentDisposition := r.Headers.Get("Content-Disposition")
 

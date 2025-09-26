@@ -1,3 +1,4 @@
+// crawler/config.go
 package crawler
 
 import (
@@ -16,6 +17,7 @@ type CrawlerConfig struct {
 	AllowedPaths    []string
 	AllowedParams   []string
 	AllowedSchemes  []string
+	AllowedHosts    []string // New field for host filtering
 	IPCheckServices []string
 }
 
@@ -46,6 +48,10 @@ func DefaultConfig() *CrawlerConfig {
 			"curtab",
 		},
 		AllowedSchemes: []string{"https"},
+		AllowedHosts: []string{
+			"libgen.li",
+			"*.booksdl.lc", // Using wildcard pattern for cdn subdomains
+		},
 		IPCheckServices: []string{
 			"https://httpbin.org/ip",
 			"https://api.ipify.org?format=text",

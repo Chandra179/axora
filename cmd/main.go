@@ -84,6 +84,7 @@ func Crawl(worker *crawler.Worker, embed embedding.Client) http.HandlerFunc {
 		defer cancel()
 
 		worker.Crawl(ctx, []string{"https://libgen.li/index.php?req=" + query + "+ext:epub&curtab=f"})
+		// worker.Crawl(ctx, []string{"https://libgen.li/ads.php?md5=893a98f863a22e2bca1e7db9a95a0089"})
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Crawl started"))
 	}
