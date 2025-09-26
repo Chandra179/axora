@@ -47,7 +47,7 @@ func main() {
 	pdfPro := file.NewPDFExtractor(logger)
 	epubPro := file.NewEpubExtractor(logger)
 	fp := file.NewCore(pdfPro, epubPro, cfg.DownloadPath, logger)
-	worker, err := crawler.NewWorker(
+	worker, err := crawler.NewCrawler(
 		qdb,
 		extractor,
 		recurCharChunking,
@@ -85,6 +85,8 @@ func Crawl(worker *crawler.Worker, embed embedding.Client) http.HandlerFunc {
 
 		worker.Crawl(ctx, []string{"https://libgen.li/index.php?req=" + query + "+ext:epub&curtab=f"})
 		// worker.Crawl(ctx, []string{"https://libgen.li/ads.php?md5=893a98f863a22e2bca1e7db9a95a0089"})
+		// worker.Crawl(ctx, []string{"https://libgen.li/index.php?req=" + query})
+		worker.Crawl(ctx, []string{"https://libgen.li/ads.php?md5=100e2484399564d365eb67b74077770d"})
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Crawl started"))
 	}
