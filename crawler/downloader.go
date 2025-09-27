@@ -20,7 +20,6 @@ const maxFilenameLength = 100
 
 // DownloadFile downloads a file from the given URL to the specified path
 func (w *Crawler) DownloadFile(ctx context.Context, url, filename, expectedMD5 string) error {
-	w.logger.Info("start download")
 	if expectedMD5 == "" {
 		return nil
 	}

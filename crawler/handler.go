@@ -21,6 +21,7 @@ func (w *Crawler) OnHTML(ctx context.Context) colly.HTMLCallback {
 			return
 		}
 
+		w.logger.Info("visiting: " + absoluteURL)
 		e.Request.Visit(absoluteURL)
 	}
 }
@@ -36,7 +37,7 @@ func (w *Crawler) OnError(ctx context.Context, collector *colly.Collector) colly
 // OnResponse handles successful responses and downloads
 func (w *Crawler) OnResponse(ctx context.Context) colly.ResponseCallback {
 	return func(r *colly.Response) {
-		w.logger.Info("onresponse: " + r.Request.URL.String())
+		w.logger.Info("onrepsonse: " + r.Request.URL.String())
 		contentType := r.Headers.Get("Content-Type")
 		contentDisposition := r.Headers.Get("Content-Disposition")
 

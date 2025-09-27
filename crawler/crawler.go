@@ -13,6 +13,7 @@ import (
 	"axora/repository"
 
 	"github.com/gocolly/colly/v2"
+	"github.com/gocolly/colly/v2/debug"
 	"go.uber.org/zap"
 )
 
@@ -97,10 +98,13 @@ func NewCrawler(
 		colly.TraceHTTP(),
 		colly.ParseHTTPErrorResponse(),
 		colly.URLFilters(
-			regexp.MustCompile(`^https://libgen\.li(?:/(?:index\.php|edition\.php|ads\.php|get\.php))?(?:\?(?:.*(?:req|id|md5|downloadname|key|ext)=.*)?)?$`),
-			regexp.MustCompile(`^https://[^.]+\.booksdl\.lc(?:/(?:index\.php|edition\.php|ads\.php|get\.php))?(?:\?(?:.*(?:id|md5)=.*)?)?$`),
+			regexp.MustCompile(`^https://libgen\.li/index\.php\?req=[^&]+ext:epub[^&]*&curtab=f$`),
+			regexp.MustCompile(`^https://libgen\.li/edition\.php\?id=[^&]+$`),
+			regexp.MustCompile(`^https://libgen\.li/ads\.php\?md5=[^&]+$`),
+			regexp.MustCompile(`^https://libgen\.li/get\.php\?md5=[^&]+&key=[^&]+$`),
+			regexp.MustCompile(`^https://[^.]+\.booksdl\.lc/get\.php\?md5=[^&]+&key=[^&]+$`),
 		),
-		// colly.Debugger(&debug.LogDebugger{}),
+		colly.Debugger(&debug.LogDebugger{}),
 	)
 	c.WithTransport(transport)
 	c.SetClient(client)
