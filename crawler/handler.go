@@ -13,16 +13,42 @@ func (w *Crawler) OnHTML(ctx context.Context) colly.HTMLCallback {
 	return func(e *colly.HTMLElement) {
 		href := e.Attr("href")
 		absoluteURL := e.Request.AbsoluteURL(href)
-		isVisited, errV := w.collector.HasVisited(absoluteURL)
-		if errV != nil {
-			return
-		}
-		if isVisited {
-			return
-		}
 
-		w.logger.Info("visiting: " + absoluteURL)
 		e.Request.Visit(absoluteURL)
+	}
+}
+
+func (w *Crawler) OnHTMLDOMLog(ctx context.Context) colly.HTMLCallback {
+	return func(e *colly.HTMLElement) {
+		url := e.Request.URL.String()
+
+		// Log all links found
+		var links []string
+		var bookLinks []string
+
+		e.ForEach("a[href]", func(i int, link *colly.HTMLElement) {
+			href := link.Attr("href")
+			text := strings.TrimSpace(link.Text)
+			if text == "" {
+				text = "[no text]"
+			}
+			absoluteURL := e.Request.AbsoluteURL(href)
+			links = append(links, absoluteURL+" ("+text+")")
+
+			// Specifically look for book-related links
+			if strings.Contains(href, "/file.php?id=") ||
+				strings.Contains(href, "/ads.php?md5=") ||
+				strings.Contains(href, "edition.php?id=") {
+				bookLinks = append(bookLinks, absoluteURL+" ("+text+")")
+			}
+		})
+
+		w.logger.Info("HTML DOM Structure",
+			zap.String("url", url),
+			zap.Int("links_count", len(links)),
+			zap.Strings("links", links),
+			zap.Int("book_links_count", len(bookLinks)),
+			zap.Strings("book_links", bookLinks))
 	}
 }
 

@@ -13,7 +13,6 @@ import (
 	"axora/repository"
 
 	"github.com/gocolly/colly/v2"
-	"github.com/gocolly/colly/v2/debug"
 	"go.uber.org/zap"
 )
 
@@ -26,6 +25,7 @@ type CrawlerConfig struct {
 	MaxRetries      int
 	MaxURLVisits    int
 	IPCheckServices []string
+	URLFilters      []*regexp.Regexp
 }
 
 func DefaultConfig() *CrawlerConfig {
@@ -41,6 +41,14 @@ func DefaultConfig() *CrawlerConfig {
 			"https://httpbin.org/ip",
 			"https://api.ipify.org?format=text",
 			"https://icanhazip.com",
+		},
+		URLFilters: []*regexp.Regexp{
+			regexp.MustCompile(`https://libgen\.li/index\.php\?req=[^ ]*(?: |\%20)ext:epub`),
+			regexp.MustCompile(`^https://libgen\.li/index\.php\?req=[^&]+$`),
+			regexp.MustCompile(`^https://libgen\.li/edition\.php\?id=[^&]+$`),
+			regexp.MustCompile(`^https://libgen\.li/ads\.php\?md5=[^&]+$`),
+			regexp.MustCompile(`^https://libgen\.li/get\.php\?md5=[^&]+&key=[^&]+$`),
+			regexp.MustCompile(`^https://[^.]+\.booksdl\.lc/get\.php\?md5=[^&]+&key=[^&]+$`),
 		},
 	}
 }
@@ -97,14 +105,8 @@ func NewCrawler(
 		colly.Async(true),
 		colly.TraceHTTP(),
 		colly.ParseHTTPErrorResponse(),
-		colly.URLFilters(
-			regexp.MustCompile(`^https://libgen\.li/index\.php\?req=[^&]+ext:epub[^&]*&curtab=f$`),
-			regexp.MustCompile(`^https://libgen\.li/edition\.php\?id=[^&]+$`),
-			regexp.MustCompile(`^https://libgen\.li/ads\.php\?md5=[^&]+$`),
-			regexp.MustCompile(`^https://libgen\.li/get\.php\?md5=[^&]+&key=[^&]+$`),
-			regexp.MustCompile(`^https://[^.]+\.booksdl\.lc/get\.php\?md5=[^&]+&key=[^&]+$`),
-		),
-		colly.Debugger(&debug.LogDebugger{}),
+		colly.URLFilters(config.URLFilters...),
+		// colly.Debugger(&debug.LogDebugger{}),
 	)
 	c.WithTransport(transport)
 	c.SetClient(client)
@@ -114,6 +116,7 @@ func NewCrawler(
 		Parallelism: config.Parallelism,
 		Delay:       config.RequestDelay,
 	})
+	c.IgnoreRobotsTxt = true
 
 	worker := &Crawler{
 		collector:       c,
@@ -164,6 +167,7 @@ func (w *Crawler) setupEventHandlers(ctx context.Context) {
 	w.collector.OnHTML("a[href]", w.OnHTML(ctx))
 	w.collector.OnError(w.OnError(ctx, w.collector))
 	w.collector.OnResponse(w.OnResponse(ctx))
+	w.collector.OnHTML("html", w.OnHTMLDOMLog(ctx))
 }
 
 func GenerateContextID() string {
