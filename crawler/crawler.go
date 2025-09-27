@@ -43,7 +43,6 @@ func DefaultConfig() *CrawlerConfig {
 			"https://icanhazip.com",
 		},
 		URLFilters: []*regexp.Regexp{
-			regexp.MustCompile(`https://libgen\.li/index\.php\?req=[^ ]*(?: |\%20)ext:epub`),
 			regexp.MustCompile(`^https://libgen\.li/index\.php\?req=[^&]+$`),
 			regexp.MustCompile(`^https://libgen\.li/edition\.php\?id=[^&]+$`),
 			regexp.MustCompile(`^https://libgen\.li/ads\.php\?md5=[^&]+$`),

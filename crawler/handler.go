@@ -46,7 +46,7 @@ func (w *Crawler) OnHTMLDOMLog(ctx context.Context) colly.HTMLCallback {
 		w.logger.Info("HTML DOM Structure",
 			zap.String("url", url),
 			zap.Int("links_count", len(links)),
-			zap.Strings("links", links),
+			// zap.Strings("links", links),
 			zap.Int("book_links_count", len(bookLinks)),
 			zap.Strings("book_links", bookLinks))
 	}
