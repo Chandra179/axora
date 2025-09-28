@@ -42,6 +42,7 @@ func main() {
 	// ==========
 	logger, _ := zap.NewProduction()
 	extractor := crawler.NewContentExtractor()
+	browser := crawler.NewBrowser(logger, cfg.ProxyURL)
 	mpnetbasev2 := embedding.NewMpnetBaseV2(cfg.AllMinilmL6V2URL)
 	recurCharChunking := chunking.NewRecursiveCharacterChunking(mpnetbasev2)
 	pdfPro := file.NewPDFExtractor(logger)
@@ -68,12 +69,12 @@ func main() {
 		fp.ProcessFiles()
 	}()
 	fmt.Println("Running")
-	http.Handle("/scrap", Crawl(worker, mpnetbasev2))
+	http.Handle("/scrap", Crawl(worker, *browser, mpnetbasev2))
 	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil))
 
 }
 
-func Crawl(worker *crawler.Crawler, embed embedding.Client) http.HandlerFunc {
+func Crawl(worker *crawler.Crawler, browser crawler.Browser, embed embedding.Client) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		query := r.URL.Query().Get("q")
 		if strings.TrimSpace(query) == "" {
@@ -83,11 +84,11 @@ func Crawl(worker *crawler.Crawler, embed embedding.Client) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Hour)
 		defer cancel()
 
-		worker.CollectUrls(ctx, query)
-		// worker.Crawl(ctx, []string{"https://libgen.li/index.php?req=" + query + "%20ext:epub"})
-		// worker.Crawl(ctx, []string{"https://libgen.li/ads.php?md5=893a98f863a22e2bca1e7db9a95a0089"})
-		// worker.Crawl(ctx, []string{"https://libgen.li/index.php?req=" + query})
-		// worker.Crawl(ctx, []string{"https://libgen.li/ads.php?md5=100e2484399564d365eb67b74077770d"})
+		urls, _ := browser.CollectUrls(ctx, query)
+		libgenUrl := "https://libgen.li/index.php?req=" + query + "%20ext:epub"
+		urls = append(urls, libgenUrl)
+
+		worker.Crawl(ctx, urls)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Crawl started"))
 	}
