@@ -83,7 +83,8 @@ func Crawl(worker *crawler.Crawler, embed embedding.Client) http.HandlerFunc {
 		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Hour)
 		defer cancel()
 
-		worker.Crawl(ctx, []string{"https://libgen.li/index.php?req=" + query + "%20ext:epub"})
+		worker.CollectUrls(ctx, query)
+		// worker.Crawl(ctx, []string{"https://libgen.li/index.php?req=" + query + "%20ext:epub"})
 		// worker.Crawl(ctx, []string{"https://libgen.li/ads.php?md5=893a98f863a22e2bca1e7db9a95a0089"})
 		// worker.Crawl(ctx, []string{"https://libgen.li/index.php?req=" + query})
 		// worker.Crawl(ctx, []string{"https://libgen.li/ads.php?md5=100e2484399564d365eb67b74077770d"})
