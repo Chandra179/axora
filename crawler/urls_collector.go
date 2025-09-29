@@ -33,31 +33,25 @@ func NewBrowser(logger *zap.Logger, torProxyURL string) *Browser {
 				Name:        "DuckDuckGo",
 				URLTemplate: "https://duckduckgo.com/?q=%s",
 				NextSelectors: []string{
-					"button[aria-label='More results']",
-					".more-results",
-					"[data-testid='more-results']",
+					`button[id="more-results"]`,
 				},
-				ResultSelector: "a[data-testid='result-title-a']",
+				ResultSelector: `section[data-testid="mainline"]`,
 			},
 			{
-				Name:        "Bing",
-				URLTemplate: "https://www.bing.com/search?q=%s",
+				Name:        "Brave",
+				URLTemplate: "https://search.brave.com/search?q=%s",
 				NextSelectors: []string{
-					"a[aria-label='Next page']",
-					".sb_pagN",
-					"a[title='Next page']",
+					`a.button[role="link"]`,
 				},
-				ResultSelector: ".b_algo h2 a",
+				ResultSelector: `div#results`,
 			},
 			{
-				Name:        "Google",
-				URLTemplate: "https://www.google.com/search?q=%s",
+				Name:        "Startpage",
+				URLTemplate: "https://www.startpage.com/sp/search?q=%s",
 				NextSelectors: []string{
-					"a[aria-label='Next page']",
-					"a#pnnext",
-					"[aria-label='Next']",
+					`button[data-testid="pagination-button"][type="submit"]`,
 				},
-				ResultSelector: "h3 a",
+				ResultSelector: `section#main`,
 			},
 		},
 		ChromedpOptions: append(chromedp.DefaultExecAllocatorOptions[:],
@@ -121,7 +115,47 @@ func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, erro
 		`, nil),
 	)
 	if err != nil {
-		b.logger.Info("")
+		b.logger.Error("Failed to navigate and setup page", zap.Error(err))
+
+		// Log current page state for debugging
+		var currentURL, title, domHTML string
+		chromedp.Run(taskCtx,
+			chromedp.Location(&currentURL),
+			chromedp.Title(&title),
+			chromedp.OuterHTML("html", &domHTML),
+		)
+
+		b.logger.Info("Page state after navigation error",
+			zap.String("current_url", currentURL),
+			zap.String("title", title),
+			zap.Int("dom_length", len(domHTML)))
+
+		// Log first 1000 chars of DOM for debugging
+		if len(domHTML) > 1000 {
+			b.logger.Debug("DOM snippet", zap.String("html", domHTML[:1000]+"..."))
+		} else {
+			b.logger.Debug("Full DOM", zap.String("html", domHTML))
+		}
+
+		return nil, fmt.Errorf("navigation failed: %w", err)
+	}
+
+	// Wait a bit and then log page state before extraction
+	time.Sleep(2 * time.Second)
+
+	var currentURL, title, domHTML string
+	err = chromedp.Run(taskCtx,
+		chromedp.Location(&currentURL),
+		chromedp.Title(&title),
+		chromedp.OuterHTML("html", &domHTML),
+	)
+	if err != nil {
+		b.logger.Error("Failed to get page state", zap.Error(err))
+	} else {
+		b.logger.Info("Page state before extraction",
+			zap.String("current_url", currentURL),
+			zap.String("title", title),
+			zap.Int("dom_length", len(domHTML)))
 	}
 
 	var rawLinks []map[string]string
@@ -141,27 +175,67 @@ func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, erro
 		links.filter(link => 
 			link.href && 
 			!link.href.startsWith('javascript:') &&
-			link.href.startsWith('http') &&
+			link.href.startsWith('https') &&
 			link.text.length > 0
 		)
 	`, engine1.ResultSelector)
-	err = chromedp.Run(ctx,
-		chromedp.Sleep(2*time.Second),
+
+	err = chromedp.Run(taskCtx,
 		chromedp.Evaluate(script, &rawLinks),
 	)
 
 	if err != nil {
-		b.logger.Info("")
+		b.logger.Error("Failed to extract links",
+			zap.Error(err),
+			zap.String("selector", engine1.ResultSelector),
+			zap.String("script", script))
+
+		// Log DOM again after extraction failure
+		var postErrorHTML string
+		chromedp.Run(taskCtx, chromedp.OuterHTML("html", &postErrorHTML))
+
+		b.logger.Info("DOM state after extraction error",
+			zap.Int("dom_length", len(postErrorHTML)))
+
+		// Log DOM snippet for debugging
+		if len(postErrorHTML) > 2000 {
+			b.logger.Debug("DOM snippet after error", zap.String("html", postErrorHTML[:2000]+"..."))
+		} else {
+			b.logger.Debug("Full DOM after error", zap.String("html", postErrorHTML))
+		}
+
+		return nil, fmt.Errorf("link extraction failed: %w", err)
 	}
+
+	b.logger.Info("Successfully extracted links",
+		zap.Int("total_links", len(rawLinks)),
+		zap.String("selector_used", engine1.ResultSelector))
 
 	var results []string
 	for i, link := range rawLinks {
 		results = append(results, link["href"])
 		// Log first few for debugging
 		if i < 3 {
+			linkText := link["text"]
+			if len(linkText) > 200 {
+				linkText = linkText[:200]
+			}
 			b.logger.Info("Extracted search result",
 				zap.String("url", link["href"]),
-				zap.String("title", link["text"][:200]))
+				zap.String("title", linkText))
+		}
+	}
+
+	// Final DOM logging if we want to see the successful state
+	if len(results) == 0 {
+		b.logger.Warn("No results found, logging final DOM state")
+		var finalHTML string
+		chromedp.Run(taskCtx, chromedp.OuterHTML("html", &finalHTML))
+
+		if len(finalHTML) > 3000 {
+			b.logger.Debug("Final DOM snippet", zap.String("html", finalHTML[:3000]+"..."))
+		} else {
+			b.logger.Debug("Final DOM", zap.String("html", finalHTML))
 		}
 	}
 

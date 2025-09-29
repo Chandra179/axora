@@ -88,6 +88,8 @@ func Crawl(worker *crawler.Crawler, browser crawler.Browser, embed embedding.Cli
 		libgenUrl := "https://libgen.li/index.php?req=" + query + "%20ext:epub"
 		urls = append(urls, libgenUrl)
 
+		fmt.Println(urls)
+
 		worker.Crawl(ctx, urls)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Crawl started"))
