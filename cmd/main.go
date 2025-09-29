@@ -85,7 +85,7 @@ func Crawl(worker *crawler.Crawler, browser crawler.Browser, embed embedding.Cli
 		defer cancel()
 
 		urls, _ := browser.CollectUrls(ctx, query)
-		libgenUrl := "https://libgen.li/index.php?req=" + query + "%20ext:epub"
+		libgenUrl := "https://libgen.li/index.php?req=" + query
 		urls = append(urls, libgenUrl)
 
 		fmt.Println(urls)

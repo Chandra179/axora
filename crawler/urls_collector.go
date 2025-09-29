@@ -39,13 +39,13 @@ func NewBrowser(logger *zap.Logger, torProxyURL string) *Browser {
 			{
 				Name:             "Brave",
 				URLTemplate:      "https://search.brave.com/search?q=%s",
-				NextPageSelector: `a.button[role="link"] span:contains("Next")`,
+				NextPageSelector: `a.button[role="link"][rel="noopener"]`,
 				ResultSelector:   `#results`,
 			},
 			{
 				Name:             "Startpage",
 				URLTemplate:      "https://www.startpage.com/sp/search?q=%s",
-				NextPageSelector: `button[data-testid="pagination-button"][type="submit"]`,
+				NextPageSelector: `form[aria-label="go to page Next"] button[data-testid="pagination-button"]`,
 				ResultSelector:   `section#main`,
 			},
 		},
@@ -54,15 +54,6 @@ func NewBrowser(logger *zap.Logger, torProxyURL string) *Browser {
 			chromedp.NoSandbox,
 			chromedp.Headless,
 			chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
-
-			// Enhanced logging options
-			chromedp.Flag("enable-logging", ""),
-			chromedp.Flag("log-level", "0"), // 0 = INFO, 1 = WARNING, 2 = ERROR
-			chromedp.Flag("v", "1"),         // Verbose logging
-
-			// Network logging
-			chromedp.Flag("enable-network-logging", ""),
-			chromedp.Flag("net-log-capture-mode", "IncludeCookiesAndCredentials"),
 
 			// Your existing stealth options
 			chromedp.Flag("accept-language", "en-US,en;q=0.9"),
@@ -80,7 +71,7 @@ func NewBrowser(logger *zap.Logger, torProxyURL string) *Browser {
 }
 
 func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, error) {
-	engine := b.SupportedEngines[0]
+	engine := b.SupportedEngines[1]
 
 	taskCtx, cancel, err := b.setupBrowserContext(ctx, time.Minute*5)
 	if err != nil {
@@ -117,7 +108,9 @@ func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, erro
 			b.logger.Info("Collected URLs from page",
 				zap.Int("page", b.currentPage),
 				zap.Int("urls_this_page", len(urls)),
-				zap.Int("total_urls", len(b.allCollectedURLs)))
+				zap.Int("total_urls", len(b.allCollectedURLs)),
+				zap.Strings("urls", urls),
+			)
 		}
 
 		if b.currentPage >= b.maxPages {
@@ -125,7 +118,7 @@ func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, erro
 			break
 		}
 
-		b.logDOMBeforeNextPage(taskCtx, engine)
+		// b.logDOMBeforeNextPage(taskCtx, engine)
 
 		hasNext, err := b.goToNextPage(taskCtx, engine)
 		if err != nil {
@@ -140,7 +133,6 @@ func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, erro
 			break
 		}
 
-		// Add delay between pages to be respectful
 		if b.pageDelay > 0 {
 			b.logger.Debug("Waiting between pages", zap.Duration("delay", b.pageDelay))
 			time.Sleep(b.pageDelay)
@@ -246,7 +238,7 @@ func (b *Browser) extractLinksFromCurrentPage(ctx context.Context, engine Search
 			}));
 		}
 		
-		links.filter(link => 
+		links = links.filter(link => 
 			link.href &&
 			!link.href.startsWith('javascript:') &&
 			link.href.startsWith('https') &&
@@ -254,7 +246,12 @@ func (b *Browser) extractLinksFromCurrentPage(ctx context.Context, engine Search
 			!link.href.includes('search.brave.com') &&
 			!link.href.includes('duckduckgo.com') &&
 			!link.href.includes('startpage.com')
-		)
+		);
+
+		// ✅ Deduplicate by href
+		links = Array.from(new Map(links.map(link => [link.href, link])).values());
+
+		links;
 	`, engine.ResultSelector)
 
 	err := chromedp.Run(ctx, chromedp.Evaluate(script, &rawLinks))
@@ -266,10 +263,6 @@ func (b *Browser) extractLinksFromCurrentPage(ctx context.Context, engine Search
 	for _, link := range rawLinks {
 		results = append(results, link["href"])
 	}
-
-	b.logger.Debug("Extracted links from page",
-		zap.Int("links_found", len(results)),
-		zap.String("selector", engine.ResultSelector))
 
 	return results, nil
 }
