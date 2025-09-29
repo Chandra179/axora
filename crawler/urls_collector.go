@@ -3,19 +3,19 @@ package crawler
 import (
 	"context"
 	"fmt"
-	"log"
 	"net/url"
 	"time"
 
+	"github.com/chromedp/cdproto/cdp"
 	"github.com/chromedp/chromedp"
 	"go.uber.org/zap"
 )
 
 type SearchEngine struct {
-	Name           string
-	URLTemplate    string
-	NextSelectors  []string
-	ResultSelector string
+	Name             string
+	URLTemplate      string
+	NextPageSelector string
+	ResultSelector   string
 }
 
 type Browser struct {
@@ -23,6 +23,12 @@ type Browser struct {
 	proxyURL         string
 	SupportedEngines []SearchEngine
 	ChromedpOptions  []chromedp.ExecAllocatorOption
+
+	// Pagination state
+	maxPages         int
+	currentPage      int
+	pageDelay        time.Duration
+	allCollectedURLs []string
 }
 
 func NewBrowser(logger *zap.Logger, torProxyURL string) *Browser {
@@ -31,28 +37,16 @@ func NewBrowser(logger *zap.Logger, torProxyURL string) *Browser {
 		proxyURL: torProxyURL,
 		SupportedEngines: []SearchEngine{
 			{
-				Name:        "DuckDuckGo",
-				URLTemplate: "https://duckduckgo.com/?q=%s",
-				NextSelectors: []string{
-					`button[id="more-results"]`,
-				},
-				ResultSelector: `section[data-testid="mainline"]`,
+				Name:             "Brave",
+				URLTemplate:      "https://search.brave.com/search?q=%s",
+				NextPageSelector: `a.button[role="link"] span:contains("Next")`,
+				ResultSelector:   `#results`,
 			},
 			{
-				Name:        "Brave",
-				URLTemplate: "https://search.brave.com/search?q=%s",
-				NextSelectors: []string{
-					`a.button[role="link"]`,
-				},
-				ResultSelector: `#results`,
-			},
-			{
-				Name:        "Startpage",
-				URLTemplate: "https://www.startpage.com/sp/search?q=%s",
-				NextSelectors: []string{
-					`button[data-testid="pagination-button"][type="submit"]`,
-				},
-				ResultSelector: `section#main`,
+				Name:             "Startpage",
+				URLTemplate:      "https://www.startpage.com/sp/search?q=%s",
+				NextPageSelector: `button[data-testid="pagination-button"][type="submit"]`,
+				ResultSelector:   `section#main`,
 			},
 		},
 		ChromedpOptions: append(chromedp.DefaultExecAllocatorOptions[:],
@@ -78,103 +72,161 @@ func NewBrowser(logger *zap.Logger, torProxyURL string) *Browser {
 			chromedp.Flag("exclude-switches", "enable-automation"),
 			chromedp.Flag("disable-extensions", ""),
 		),
+		maxPages:         50,
+		currentPage:      0,
+		pageDelay:        time.Second * 2,
+		allCollectedURLs: []string{},
 	}
 }
 
 func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, error) {
-	// ================
-	// Browser Context with enhanced logging
-	// ================
+	engine := b.SupportedEngines[0]
 
+	taskCtx, cancel, err := b.setupBrowserContext(ctx, time.Minute*5)
+	if err != nil {
+		return nil, fmt.Errorf("failed to setup browser context: %w", err)
+	}
+	defer cancel()
+
+	searchURL := fmt.Sprintf(engine.URLTemplate, url.QueryEscape(query))
+	if err := b.navigateToPage(taskCtx, searchURL, engine.Name); err != nil {
+		return nil, fmt.Errorf("failed to navigate to first page: %w", err)
+	}
+
+	for b.currentPage < b.maxPages {
+		b.currentPage++
+
+		b.logger.Info("Processing page",
+			zap.Int("current_page", b.currentPage),
+			zap.Int("max_pages", b.maxPages),
+			zap.String("engine", engine.Name))
+
+		if err := b.checkPageState(taskCtx); err != nil {
+			b.logger.Warn("Page state check failed",
+				zap.Error(err),
+				zap.Int("page", b.currentPage))
+		}
+
+		urls, err := b.extractLinksFromCurrentPage(taskCtx, engine)
+		if err != nil {
+			b.logger.Error("Failed to extract links from page",
+				zap.Error(err),
+				zap.Int("page", b.currentPage))
+		} else {
+			b.allCollectedURLs = append(b.allCollectedURLs, urls...)
+			b.logger.Info("Collected URLs from page",
+				zap.Int("page", b.currentPage),
+				zap.Int("urls_this_page", len(urls)),
+				zap.Int("total_urls", len(b.allCollectedURLs)))
+		}
+
+		if b.currentPage >= b.maxPages {
+			b.logger.Info("Reached maximum pages", zap.Int("max_pages", b.maxPages))
+			break
+		}
+
+		b.logDOMBeforeNextPage(taskCtx, engine)
+
+		hasNext, err := b.goToNextPage(taskCtx, engine)
+		if err != nil {
+			b.logger.Error("Failed to navigate to next page",
+				zap.Error(err),
+				zap.Int("current_page", b.currentPage))
+			break
+		}
+
+		if !hasNext {
+			b.logger.Info("No more pages available", zap.Int("final_page", b.currentPage))
+			break
+		}
+
+		// Add delay between pages to be respectful
+		if b.pageDelay > 0 {
+			b.logger.Debug("Waiting between pages", zap.Duration("delay", b.pageDelay))
+			time.Sleep(b.pageDelay)
+		}
+	}
+
+	b.logger.Info("Crawling completed",
+		zap.Int("total_pages", b.currentPage),
+		zap.Int("total_urls", len(b.allCollectedURLs)),
+		zap.String("engine", engine.Name))
+
+	return b.allCollectedURLs, nil
+}
+
+func (b *Browser) setupBrowserContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc, error) {
 	allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, b.ChromedpOptions...)
-	taskCtx, taskCancel := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
+	taskCtx, taskCancel := chromedp.NewContext(allocCtx)
 
 	cancel := func() {
 		taskCancel()
 		allocCancel()
 	}
 
-	timeoutCtx, timeoutCancel := context.WithTimeout(taskCtx, 60*time.Second)
-	oldCancel := cancel
-	cancel = func() {
-		timeoutCancel()
-		oldCancel()
+	if timeout > 0 {
+		timeoutCtx, timeoutCancel := context.WithTimeout(taskCtx, timeout)
+		oldCancel := cancel
+		cancel = func() {
+			timeoutCancel()
+			oldCancel()
+		}
+		taskCtx = timeoutCtx
 	}
-	defer cancel()
-	taskCtx = timeoutCtx
 
-	// ================
-	// Do Search
-	// ================
-	engine1 := b.SupportedEngines[1]
-	searchURL := fmt.Sprintf(engine1.URLTemplate, url.QueryEscape(query))
+	return taskCtx, cancel, nil
+}
 
-	b.logger.Info("Starting navigation",
-		zap.String("url", searchURL),
-		zap.String("engine", engine1.Name))
+func (b *Browser) navigateToPage(ctx context.Context, url, engineName string) error {
+	b.logger.Info("Navigating to page",
+		zap.String("url", url),
+		zap.String("engine", engineName))
 
-	// Break down the navigation into smaller steps for better debugging
-	err := chromedp.Run(taskCtx,
-		// First, just navigate
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			b.logger.Info("Step 1: Navigating to URL")
-			return chromedp.Navigate(searchURL).Do(ctx)
-		}),
-
-		// Wait for basic DOM readiness
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			b.logger.Info("Step 2: Waiting for DOM ready state")
-			return chromedp.WaitReady("body").Do(ctx)
-		}),
-
-		// Additional wait for the page to stabilize
-		chromedp.ActionFunc(func(ctx context.Context) error {
-			b.logger.Info("Step 3: Waiting for page stabilization")
-			return chromedp.Sleep(3 * time.Second).Do(ctx)
-		}),
+	err := chromedp.Run(ctx,
+		chromedp.Navigate(url),
+		chromedp.WaitReady("body"),
 	)
 
 	if err != nil {
 		b.logger.Error("Navigation failed",
 			zap.Error(err),
-			zap.String("url", searchURL))
-
-		// Enhanced debugging information
-		var currentURL, title, readyState string
-		debugErr := chromedp.Run(taskCtx,
-			chromedp.Location(&currentURL),
-			chromedp.Title(&title),
-			chromedp.Evaluate(`document.readyState`, &readyState),
-		)
-
-		if debugErr == nil {
-			b.logger.Info("Debug info after navigation failure",
-				zap.String("current_url", currentURL),
-				zap.String("title", title),
-				zap.String("ready_state", readyState))
-		}
-
-		return nil, fmt.Errorf("navigation failed: %w", err)
+			zap.String("url", url))
+		return fmt.Errorf("navigation failed: %w", err)
 	}
 
-	b.logger.Info("Navigation successful, proceeding with extraction")
+	return nil
+}
 
-	var currentURL, title, domHTML string
-	err = chromedp.Run(taskCtx,
+func (b *Browser) checkPageState(ctx context.Context) error {
+	var currentURL, title, readyState string
+
+	err := chromedp.Run(ctx,
 		chromedp.Location(&currentURL),
 		chromedp.Title(&title),
-		chromedp.OuterHTML("html", &domHTML),
+		chromedp.Evaluate(`document.readyState`, &readyState),
 	)
+
 	if err != nil {
-		b.logger.Error("Failed to get page state", zap.Error(err))
-	} else {
-		b.logger.Info("Page state before extraction",
-			zap.String("current_url", currentURL),
-			zap.String("title", title),
-			zap.Int("dom_length", len(domHTML)))
+		return fmt.Errorf("failed to get page state: %w", err)
 	}
 
+	b.logger.Info("Page state",
+		zap.String("url", currentURL),
+		zap.String("title", title),
+		zap.String("ready_state", readyState),
+		zap.Int("page", b.currentPage))
+
+	// Check for common blocking scenarios
+	if title == "Access Denied" || title == "Blocked" {
+		return fmt.Errorf("page access blocked: %s", title)
+	}
+
+	return nil
+}
+
+func (b *Browser) extractLinksFromCurrentPage(ctx context.Context, engine SearchEngine) ([]string, error) {
 	var rawLinks []map[string]string
+
 	script := fmt.Sprintf(`
 		let resultsDiv = document.querySelector('%s');
 		let links = [];
@@ -198,70 +250,94 @@ func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, erro
 			link.href &&
 			!link.href.startsWith('javascript:') &&
 			link.href.startsWith('https') &&
-			link.text.length > 0
+			link.text.length > 0 &&
+			!link.href.includes('search.brave.com') &&
+			!link.href.includes('duckduckgo.com') &&
+			!link.href.includes('startpage.com')
 		)
-	`, engine1.ResultSelector)
+	`, engine.ResultSelector)
 
-	err = chromedp.Run(taskCtx,
-		chromedp.Evaluate(script, &rawLinks),
-	)
-
-	b.logger.Info("success collecting links")
-
+	err := chromedp.Run(ctx, chromedp.Evaluate(script, &rawLinks))
 	if err != nil {
-		b.logger.Error("Failed to extract links",
-			zap.Error(err),
-			zap.String("selector", engine1.ResultSelector),
-			zap.String("script", script))
-
-		// Log DOM again after extraction failure
-		var postErrorHTML string
-		chromedp.Run(taskCtx, chromedp.OuterHTML("html", &postErrorHTML))
-
-		b.logger.Info("DOM state after extraction error",
-			zap.Int("dom_length", len(postErrorHTML)))
-
-		// Log DOM snippet for debugging
-		if len(postErrorHTML) > 2000 {
-			b.logger.Debug("DOM snippet after error", zap.String("html", postErrorHTML[:2000]+"..."))
-		} else {
-			b.logger.Debug("Full DOM after error", zap.String("html", postErrorHTML))
-		}
-
-		return nil, fmt.Errorf("link extraction failed: %w", err)
+		return nil, fmt.Errorf("failed to extract links: %w", err)
 	}
-
-	b.logger.Info("Successfully extracted links",
-		zap.Int("total_links", len(rawLinks)),
-		zap.String("selector_used", engine1.ResultSelector))
 
 	var results []string
-	for i, link := range rawLinks {
+	for _, link := range rawLinks {
 		results = append(results, link["href"])
-		// Log first few for debugging
-		if i < 3 {
-			linkText := link["text"]
-			if len(linkText) > 200 {
-				linkText = linkText[:200]
-			}
-			b.logger.Info("Extracted search result",
-				zap.String("url", link["href"]),
-				zap.String("title", linkText))
-		}
 	}
 
-	// Final DOM logging if we want to see the successful state
-	if len(results) == 0 {
-		b.logger.Warn("No results found, logging final DOM state")
-		var finalHTML string
-		chromedp.Run(taskCtx, chromedp.OuterHTML("html", &finalHTML))
+	b.logger.Debug("Extracted links from page",
+		zap.Int("links_found", len(results)),
+		zap.String("selector", engine.ResultSelector))
 
-		if len(finalHTML) > 3000 {
-			b.logger.Debug("Final DOM snippet", zap.String("html", finalHTML[:3000]+"..."))
-		} else {
-			b.logger.Debug("Final DOM", zap.String("html", finalHTML))
-		}
+	return results, nil
+}
+
+func (b *Browser) goToNextPage(ctx context.Context, engine SearchEngine) (bool, error) {
+	var nodes []*cdp.Node
+	err := chromedp.Run(ctx, chromedp.Nodes(engine.NextPageSelector, &nodes, chromedp.ByQuery))
+
+	if err != nil || len(nodes) == 0 {
+		b.logger.Info("Next page button not found",
+			zap.String("selector", engine.NextPageSelector))
+		return false, nil
 	}
 
-	return results, err
+	var isDisabled bool
+	err = chromedp.Run(ctx,
+		chromedp.Evaluate(fmt.Sprintf(`
+			let btn = document.querySelector('%s');
+			btn ? (btn.disabled || btn.classList.contains('disabled') || btn.getAttribute('aria-disabled') === 'true') : true
+		`, engine.NextPageSelector), &isDisabled),
+	)
+
+	if err != nil {
+		b.logger.Warn("Could not check if next button is disabled", zap.Error(err))
+	}
+
+	if isDisabled {
+		b.logger.Info("Next page button is disabled")
+		return false, nil
+	}
+
+	b.logger.Info("Clicking next page button", zap.String("selector", engine.NextPageSelector))
+
+	err = chromedp.Run(ctx,
+		chromedp.Click(engine.NextPageSelector, chromedp.ByQuery),
+		chromedp.Sleep(2*time.Second),
+		chromedp.WaitReady("body"),
+	)
+
+	if err != nil {
+		b.logger.Info("Failed to click next page button", zap.Error(err))
+		return false, err
+	}
+
+	return true, nil
+}
+
+func (b *Browser) logDOMBeforeNextPage(ctx context.Context, engine SearchEngine) {
+	var domHTML, currentURL string
+
+	err := chromedp.Run(ctx,
+		chromedp.Location(&currentURL),
+		chromedp.OuterHTML("html", &domHTML),
+	)
+
+	if err != nil {
+		b.logger.Warn("Failed to get DOM for logging", zap.Error(err))
+		return
+	}
+
+	b.logger.Info("DOM state before next page",
+		zap.Int("current_page", b.currentPage),
+		zap.String("current_url", currentURL),
+		zap.Int("dom_length", len(domHTML)),
+		zap.String("dom", domHTML),
+		zap.String("next_selector", engine.NextPageSelector))
+
+	b.logger.Debug("DOM snippet before pagination",
+		zap.Int("page", b.currentPage),
+		zap.String("dom_snippet", domHTML[:200]+"..."))
 }
