@@ -1,4 +1,4 @@
-package file
+package text
 
 import (
 	"go.uber.org/zap"

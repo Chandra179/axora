@@ -5,52 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
-	"net/url"
 	"regexp"
 	"time"
-
-	"axora/pkg/chunking"
-	"axora/repository"
 
 	"github.com/gocolly/colly/v2"
 	"go.uber.org/zap"
 )
-
-type CrawlerConfig struct {
-	MaxDepth        int
-	RequestTimeout  time.Duration
-	Parallelism     int
-	IPRotationDelay time.Duration
-	RequestDelay    time.Duration
-	MaxRetries      int
-	MaxURLVisits    int
-	IPCheckServices []string
-	URLFilters      []*regexp.Regexp
-}
-
-func DefaultConfig() *CrawlerConfig {
-	return &CrawlerConfig{
-		MaxDepth:        3,
-		RequestTimeout:  10800 * time.Second,
-		Parallelism:     10,
-		IPRotationDelay: 40 * time.Second,
-		RequestDelay:    5 * time.Second,
-		MaxRetries:      3,
-		MaxURLVisits:    1,
-		IPCheckServices: []string{
-			"https://httpbin.org/ip",
-			"https://api.ipify.org?format=text",
-			"https://icanhazip.com",
-		},
-		URLFilters: []*regexp.Regexp{
-			regexp.MustCompile(`^https://libgen\.li/index\.php\?req=[^&]+$`),
-			regexp.MustCompile(`^https://libgen\.li/edition\.php\?id=[^&]+$`),
-			regexp.MustCompile(`^https://libgen\.li/ads\.php\?md5=[^&]+$`),
-			regexp.MustCompile(`^https://libgen\.li/get\.php\?md5=[^&]+&key=[^&]+$`),
-			regexp.MustCompile(`^https://[^.]+\.booksdl\.lc/get\.php\?md5=[^&]+&key=[^&]+$`),
-		},
-	}
-}
 
 type ContextKey string
 
@@ -62,76 +22,55 @@ const (
 
 type Crawler struct {
 	collector       *colly.Collector
-	chunker         chunking.ChunkingClient
-	crawlVectorRepo repository.CrawlVectorRepo
-	extractor       *ContentExtractor
-	config          *CrawlerConfig
 	logger          *zap.Logger
 	maxRetries      int
-	torControlURL   string
 	httpClient      http.Client
-	downloadPath    string
-	iPCheckServices []string
-	torProxyUrl     string
-	transport       *http.Transport
-	delay           time.Duration
+	proxyUrl        string
+	IpRotationDelay time.Duration
+	downloadClient  DownloadClient
 }
 
 func NewCrawler(
-	crawlVectorRepo repository.CrawlVectorRepo,
-	extractor *ContentExtractor,
-	chunker chunking.ChunkingClient,
-	torProxyUrl string,
-	torControlURL string,
-	downloadPath string,
+	proxyUrl string,
+	httpClient *http.Client,
+	httpTransport *http.Transport,
 	logger *zap.Logger,
-	config *CrawlerConfig,
+	downloadClient DownloadClient,
 ) (*Crawler, error) {
-	if config == nil {
-		config = DefaultConfig()
-	}
-	proxyURL, _ := url.Parse(torProxyUrl)
-	transport := &http.Transport{
-		Proxy:             http.ProxyURL(proxyURL),
-		DisableKeepAlives: true,
-	}
-	client := &http.Client{Transport: transport}
-
 	c := colly.NewCollector(
 		colly.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "+
 			"(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
-		colly.MaxDepth(config.MaxDepth),
+		colly.MaxDepth(3),
 		colly.Async(true),
 		colly.TraceHTTP(),
 		colly.ParseHTTPErrorResponse(),
-		colly.URLFilters(config.URLFilters...),
+		colly.URLFilters(
+			regexp.MustCompile(`^https://libgen\.li/index\.php\?req=[^&]+$`),
+			regexp.MustCompile(`^https://libgen\.li/edition\.php\?id=[^&]+$`),
+			regexp.MustCompile(`^https://libgen\.li/ads\.php\?md5=[^&]+$`),
+			regexp.MustCompile(`^https://libgen\.li/get\.php\?md5=[^&]+&key=[^&]+$`),
+			regexp.MustCompile(`^https://[^.]+\.booksdl\.lc/get\.php\?md5=[^&]+&key=[^&]+$`),
+		),
 		// colly.Debugger(&debug.LogDebugger{}),
 	)
-	c.WithTransport(transport)
-	c.SetClient(client)
-	c.SetRequestTimeout(config.RequestTimeout)
+
+	c.WithTransport(httpTransport)
+	c.SetClient(httpClient)
+	c.SetRequestTimeout(180 * time.Minute)
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: config.Parallelism,
-		Delay:       config.RequestDelay,
+		Parallelism: 10,
+		Delay:       5 * time.Second,
 	})
 	c.IgnoreRobotsTxt = true
 
 	worker := &Crawler{
 		collector:       c,
-		chunker:         chunker,
-		crawlVectorRepo: crawlVectorRepo,
-		extractor:       extractor,
-		config:          config,
 		logger:          logger,
-		maxRetries:      config.MaxRetries,
-		torControlURL:   torControlURL,
-		httpClient:      *client,
-		downloadPath:    downloadPath,
-		iPCheckServices: config.IPCheckServices,
-		torProxyUrl:     torProxyUrl,
-		transport:       transport,
-		delay:           config.IPRotationDelay,
+		maxRetries:      3,
+		httpClient:      *httpClient,
+		proxyUrl:        proxyUrl,
+		IpRotationDelay: 40 * time.Second,
 	}
 
 	return worker, nil
@@ -139,7 +78,7 @@ func NewCrawler(
 
 func (w *Crawler) Crawl(ctx context.Context, urls []string) error {
 	contextId := GenerateContextID()
-	ip := w.GetPublicIP(ctx)
+	ip, _ := GetPublicIP(ctx, &w.httpClient)
 	ctx = context.WithValue(ctx, ContextIDKey, contextId)
 	ctx = context.WithValue(ctx, IPKey, ip)
 
@@ -166,7 +105,7 @@ func (w *Crawler) setupEventHandlers(ctx context.Context) {
 	w.collector.OnHTML("a[href]", w.OnHTML(ctx))
 	w.collector.OnError(w.OnError(ctx, w.collector))
 	w.collector.OnResponse(w.OnResponse(ctx))
-	w.collector.OnHTML("html", w.OnHTMLDOMLog(ctx))
+	// w.collector.OnHTML("html", w.OnHTMLDOMLog(ctx))
 }
 
 func GenerateContextID() string {

@@ -55,7 +55,7 @@ func (w *Crawler) OnHTMLDOMLog(ctx context.Context) colly.HTMLCallback {
 // OnError handles error events with retry logic
 func (w *Crawler) OnError(ctx context.Context, collector *colly.Collector) colly.ErrorCallback {
 	return func(r *colly.Response, err error) {
-		time.Sleep(w.config.IPRotationDelay)
+		time.Sleep(w.IpRotationDelay)
 		r.Request.Retry()
 	}
 }
@@ -73,19 +73,17 @@ func (w *Crawler) OnResponse(ctx context.Context) colly.ResponseCallback {
 		}
 
 		go func(r *colly.Response) {
-			filename := ExtractFilename(contentDisposition)
 			u := r.Request.URL
 			q := u.Query()
 			md5hash := q.Get("md5")
 
-			err := w.DownloadFile(ctx, u.String(), filename, md5hash)
+			err := w.downloadClient.DownloadFile(ctx, u.String(), contentDisposition, md5hash)
 			if err != nil {
 				w.logger.Error("Download failed",
-					zap.String("filename", filename),
+					zap.String("md5", md5hash),
 					zap.Error(err))
 			} else {
 				w.logger.Info("Download completed successfully",
-					zap.String("filename", filename),
 					zap.String("md5", md5hash))
 			}
 		}(r)

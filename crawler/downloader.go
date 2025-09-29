@@ -12,20 +12,55 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
-const maxFilenameLength = 100
+type DownloadClient interface {
+	DownloadFile(ctx context.Context, url, contentDisposition, expectedMD5 string) error
+}
 
-// DownloadFile downloads a file from the given URL to the specified path
-func (w *Crawler) DownloadFile(ctx context.Context, url, filename, expectedMD5 string) error {
-	if expectedMD5 == "" {
-		return nil
+type DownloadMgr struct {
+	maxFileNameLen int
+	downloadPath   string
+	logger         *zap.Logger
+	httpClient     *http.Client
+}
+
+func NewDownloadMgr(logger *zap.Logger, downloadPath string, httpClient *http.Client) *DownloadMgr {
+	return &DownloadMgr{
+		logger:         logger,
+		maxFileNameLen: 100,
+		downloadPath:   downloadPath,
+		httpClient:     httpClient,
+	}
+}
+
+func (w *DownloadMgr) DownloadFile(ctx context.Context, url, contentDisposition, expectedMD5 string) error {
+	var fileName string
+	if strings.Contains(contentDisposition, "filename=") {
+		parts := strings.SplitN(contentDisposition, "filename=", 2)
+		if len(parts) == 2 {
+			name := strings.Trim(parts[1], "\"")
+			if name != "" {
+				fileName = fmt.Sprintf("%d-%s", time.Now().UnixNano(), uuid.NewString())
+			}
+		}
 	}
 
-	savePath := filepath.Join(w.downloadPath, filename)
-	if _, err := os.Stat(savePath); err == nil {
+	if len(fileName) > w.maxFileNameLen {
+		hash := sha1.New()
+		hash.Write([]byte(fileName))
+		hashStr := hex.EncodeToString(hash.Sum(nil))
+		extension := filepath.Ext(fileName)
+		base := fileName[:w.maxFileNameLen-len(extension)-8]
+		fileName = fmt.Sprintf("%s-%s%s", base, hashStr[:7], extension)
+	}
+
+	savePath := filepath.Join(w.downloadPath, fileName)
+	if _, err := os.Stat(savePath); err == nil && expectedMD5 != "" {
 		if err := w.ValidateDownload(savePath, expectedMD5); err == nil {
 			w.logger.Info("File already exists and is valid, skipping download",
 				zap.String("save_path", savePath))
@@ -33,7 +68,7 @@ func (w *Crawler) DownloadFile(ctx context.Context, url, filename, expectedMD5 s
 		}
 	}
 
-	currentIP := w.GetPublicIP(ctx)
+	currentIP, _ := GetPublicIP(ctx, w.httpClient)
 
 	w.logger.Info("Starting file download",
 		zap.String("url", url),
@@ -88,7 +123,7 @@ func (w *Crawler) DownloadFile(ctx context.Context, url, filename, expectedMD5 s
 }
 
 // ValidateDownload verifies the MD5 hash of a downloaded file
-func (w *Crawler) ValidateDownload(filePath, expectedMD5 string) error {
+func (w *DownloadMgr) ValidateDownload(filePath, expectedMD5 string) error {
 	if expectedMD5 == "" {
 		return errors.New("md5 required: " + expectedMD5)
 	}
@@ -114,7 +149,7 @@ func (w *Crawler) ValidateDownload(filePath, expectedMD5 string) error {
 }
 
 // ExtractFilename extracts filename from Content-Disposition header
-func ExtractFilename(contentDisposition string) string {
+func (w *DownloadMgr) ExtractFilename(contentDisposition string) string {
 	defaultName := "download.bin"
 
 	if !strings.Contains(contentDisposition, "filename=") {
@@ -131,12 +166,12 @@ func ExtractFilename(contentDisposition string) string {
 		return defaultName
 	}
 
-	if len(filename) > maxFilenameLength {
+	if len(filename) > w.maxFileNameLen {
 		hash := sha1.New()
 		hash.Write([]byte(filename))
 		hashStr := hex.EncodeToString(hash.Sum(nil))
 		extension := filepath.Ext(filename)
-		base := filename[:maxFilenameLength-len(extension)-8]
+		base := filename[:w.maxFileNameLen-len(extension)-8]
 		return fmt.Sprintf("%s-%s%s", base, hashStr[:7], extension)
 	}
 	return filename

@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
 	"axora/config"
 	"axora/crawler"
-	"axora/file"
-	"axora/pkg/chunking"
 	"axora/pkg/embedding"
 	qdrantClient "axora/pkg/qdrantdb"
+	textExtr "axora/text"
 
 	"go.uber.org/zap"
 )
@@ -40,23 +40,22 @@ func main() {
 	// ==========
 	// SERVICES
 	// ==========
+	httpClient, httpTransport := NewHttpClient(cfg.ProxyURL)
 	logger, _ := zap.NewProduction()
-	extractor := crawler.NewContentExtractor()
+	downloadMgr := crawler.NewDownloadMgr(logger, cfg.DownloadPath, httpClient)
+	// extractor := crawler.NewContentExtractor()
 	browser := crawler.NewBrowser(logger, cfg.ProxyURL)
 	mpnetbasev2 := embedding.NewMpnetBaseV2(cfg.AllMinilmL6V2URL)
-	recurCharChunking := chunking.NewRecursiveCharacterChunking(mpnetbasev2)
-	pdfPro := file.NewPDFExtractor(logger)
-	epubPro := file.NewEpubExtractor(logger)
-	fp := file.NewCore(pdfPro, epubPro, cfg.DownloadPath, logger)
+	// recurCharChunking := chunking.NewRecursiveCharacterChunking(mpnetbasev2)
+	pdfPro := textExtr.NewPDFExtractor(logger)
+	epubPro := textExtr.NewEpubExtractor(logger)
+	fp := textExtr.NewCore(pdfPro, epubPro, cfg.DownloadPath, logger)
 	worker, err := crawler.NewCrawler(
-		qdb,
-		extractor,
-		recurCharChunking,
 		cfg.ProxyURL,
-		cfg.TorControlURL,
-		cfg.DownloadPath,
+		httpClient,
+		httpTransport,
 		logger,
-		nil,
+		downloadMgr,
 	)
 	if err != nil {
 		logger.Fatal("Failed to create worker", zap.Error(err))
@@ -88,10 +87,18 @@ func Crawl(worker *crawler.Crawler, browser crawler.Browser, embed embedding.Cli
 		libgenUrl := "https://libgen.li/index.php?req=" + query
 		urls = append(urls, libgenUrl)
 
-		fmt.Println(urls)
-
-		// worker.Crawl(ctx, urls)
+		worker.Crawl(ctx, urls)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Crawl started"))
 	}
+}
+
+func NewHttpClient(proxyUrl string) (*http.Client, *http.Transport) {
+	proxyURL, _ := url.Parse(proxyUrl)
+	transport := &http.Transport{
+		Proxy:             http.ProxyURL(proxyURL),
+		DisableKeepAlives: true,
+	}
+	client := &http.Client{Transport: transport}
+	return client, transport
 }

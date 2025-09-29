@@ -20,21 +20,18 @@ type SearchEngine struct {
 
 type Browser struct {
 	logger           *zap.Logger
-	proxyURL         string
 	SupportedEngines []SearchEngine
 	ChromedpOptions  []chromedp.ExecAllocatorOption
 
-	// Pagination state
 	maxPages         int
 	currentPage      int
 	pageDelay        time.Duration
 	allCollectedURLs []string
 }
 
-func NewBrowser(logger *zap.Logger, torProxyURL string) *Browser {
+func NewBrowser(logger *zap.Logger, proxyURL string) *Browser {
 	return &Browser{
-		logger:   logger,
-		proxyURL: torProxyURL,
+		logger: logger,
 		SupportedEngines: []SearchEngine{
 			{
 				Name:             "Brave",
@@ -62,6 +59,7 @@ func NewBrowser(logger *zap.Logger, torProxyURL string) *Browser {
 			chromedp.Flag("disable-blink-features", "AutomationControlled"),
 			chromedp.Flag("exclude-switches", "enable-automation"),
 			chromedp.Flag("disable-extensions", ""),
+			chromedp.ProxyServer(proxyURL),
 		),
 		maxPages:         50,
 		currentPage:      0,
@@ -208,7 +206,6 @@ func (b *Browser) checkPageState(ctx context.Context) error {
 		zap.String("ready_state", readyState),
 		zap.Int("page", b.currentPage))
 
-	// Check for common blocking scenarios
 	if title == "Access Denied" || title == "Blocked" {
 		return fmt.Errorf("page access blocked: %s", title)
 	}
@@ -242,13 +239,10 @@ func (b *Browser) extractLinksFromCurrentPage(ctx context.Context, engine Search
 			link.href &&
 			!link.href.startsWith('javascript:') &&
 			link.href.startsWith('https') &&
-			link.text.length > 0 &&
-			!link.href.includes('search.brave.com') &&
-			!link.href.includes('duckduckgo.com') &&
-			!link.href.includes('startpage.com')
+			link.text.length > 0
 		);
 
-		// ✅ Deduplicate by href
+		// Deduplicate by href
 		links = Array.from(new Map(links.map(link => [link.href, link])).values());
 
 		links;
@@ -269,28 +263,20 @@ func (b *Browser) extractLinksFromCurrentPage(ctx context.Context, engine Search
 
 func (b *Browser) goToNextPage(ctx context.Context, engine SearchEngine) (bool, error) {
 	var nodes []*cdp.Node
-	err := chromedp.Run(ctx, chromedp.Nodes(engine.NextPageSelector, &nodes, chromedp.ByQuery))
-
+	err := chromedp.Run(ctx,
+		chromedp.Nodes(engine.NextPageSelector, &nodes, chromedp.ByQuery),
+	)
 	if err != nil || len(nodes) == 0 {
-		b.logger.Info("Next page button not found",
+		b.logger.Info("Next page button not found (probably last page)",
 			zap.String("selector", engine.NextPageSelector))
 		return false, nil
 	}
 
-	var isDisabled bool
 	err = chromedp.Run(ctx,
-		chromedp.Evaluate(fmt.Sprintf(`
-			let btn = document.querySelector('%s');
-			btn ? (btn.disabled || btn.classList.contains('disabled') || btn.getAttribute('aria-disabled') === 'true') : true
-		`, engine.NextPageSelector), &isDisabled),
+		chromedp.WaitVisible(engine.NextPageSelector, chromedp.ByQuery),
 	)
-
 	if err != nil {
-		b.logger.Warn("Could not check if next button is disabled", zap.Error(err))
-	}
-
-	if isDisabled {
-		b.logger.Info("Next page button is disabled")
+		b.logger.Info("Next page button exists but not visible", zap.Error(err))
 		return false, nil
 	}
 
@@ -301,7 +287,6 @@ func (b *Browser) goToNextPage(ctx context.Context, engine SearchEngine) (bool, 
 		chromedp.Sleep(2*time.Second),
 		chromedp.WaitReady("body"),
 	)
-
 	if err != nil {
 		b.logger.Info("Failed to click next page button", zap.Error(err))
 		return false, err
