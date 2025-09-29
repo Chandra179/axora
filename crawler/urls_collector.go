@@ -3,6 +3,7 @@ package crawler
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/url"
 	"time"
 
@@ -43,7 +44,7 @@ func NewBrowser(logger *zap.Logger, torProxyURL string) *Browser {
 				NextSelectors: []string{
 					`a.button[role="link"]`,
 				},
-				ResultSelector: `div#results`,
+				ResultSelector: `#results`,
 			},
 			{
 				Name:        "Startpage",
@@ -60,7 +61,16 @@ func NewBrowser(logger *zap.Logger, torProxyURL string) *Browser {
 			chromedp.Headless,
 			chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
 
-			// Stealth options
+			// Enhanced logging options
+			chromedp.Flag("enable-logging", ""),
+			chromedp.Flag("log-level", "0"), // 0 = INFO, 1 = WARNING, 2 = ERROR
+			chromedp.Flag("v", "1"),         // Verbose logging
+
+			// Network logging
+			chromedp.Flag("enable-network-logging", ""),
+			chromedp.Flag("net-log-capture-mode", "IncludeCookiesAndCredentials"),
+
+			// Your existing stealth options
 			chromedp.Flag("accept-language", "en-US,en;q=0.9"),
 			chromedp.Flag("accept-encoding", "gzip, deflate, br"),
 			chromedp.Flag("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"),
@@ -73,16 +83,18 @@ func NewBrowser(logger *zap.Logger, torProxyURL string) *Browser {
 
 func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, error) {
 	// ================
-	// Browser Context
+	// Browser Context with enhanced logging
 	// ================
+
 	allocCtx, allocCancel := chromedp.NewExecAllocator(ctx, b.ChromedpOptions...)
-	taskCtx, taskCancel := chromedp.NewContext(allocCtx)
+	taskCtx, taskCancel := chromedp.NewContext(allocCtx, chromedp.WithLogf(log.Printf))
 
 	cancel := func() {
 		taskCancel()
 		allocCancel()
 	}
-	timeoutCtx, timeoutCancel := context.WithTimeout(taskCtx, 500*time.Second)
+
+	timeoutCtx, timeoutCancel := context.WithTimeout(taskCtx, 60*time.Second)
 	oldCancel := cancel
 	cancel = func() {
 		timeoutCancel()
@@ -92,56 +104,60 @@ func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, erro
 	taskCtx = timeoutCtx
 
 	// ================
-	// Doing Search
+	// Do Search
 	// ================
-	engine1 := b.SupportedEngines[0]
+	engine1 := b.SupportedEngines[1]
 	searchURL := fmt.Sprintf(engine1.URLTemplate, url.QueryEscape(query))
 
-	b.logger.Info("Navigating to search",
+	b.logger.Info("Starting navigation",
 		zap.String("url", searchURL),
 		zap.String("engine", engine1.Name))
 
+	// Break down the navigation into smaller steps for better debugging
 	err := chromedp.Run(taskCtx,
-		chromedp.Navigate(searchURL),
-		chromedp.WaitVisible("body"),
-		chromedp.Evaluate(`
-			Object.defineProperty(navigator, 'webdriver', {
-				get: () => undefined,
-			});
-			window.chrome = { runtime: {} };
-			Object.defineProperty(navigator, 'plugins', {
-				get: () => [1, 2, 3, 4, 5],
-			});
-		`, nil),
-	)
-	if err != nil {
-		b.logger.Error("Failed to navigate and setup page", zap.Error(err))
+		// First, just navigate
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			b.logger.Info("Step 1: Navigating to URL")
+			return chromedp.Navigate(searchURL).Do(ctx)
+		}),
 
-		// Log current page state for debugging
-		var currentURL, title, domHTML string
-		chromedp.Run(taskCtx,
+		// Wait for basic DOM readiness
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			b.logger.Info("Step 2: Waiting for DOM ready state")
+			return chromedp.WaitReady("body").Do(ctx)
+		}),
+
+		// Additional wait for the page to stabilize
+		chromedp.ActionFunc(func(ctx context.Context) error {
+			b.logger.Info("Step 3: Waiting for page stabilization")
+			return chromedp.Sleep(3 * time.Second).Do(ctx)
+		}),
+	)
+
+	if err != nil {
+		b.logger.Error("Navigation failed",
+			zap.Error(err),
+			zap.String("url", searchURL))
+
+		// Enhanced debugging information
+		var currentURL, title, readyState string
+		debugErr := chromedp.Run(taskCtx,
 			chromedp.Location(&currentURL),
 			chromedp.Title(&title),
-			chromedp.OuterHTML("html", &domHTML),
+			chromedp.Evaluate(`document.readyState`, &readyState),
 		)
 
-		b.logger.Info("Page state after navigation error",
-			zap.String("current_url", currentURL),
-			zap.String("title", title),
-			zap.Int("dom_length", len(domHTML)))
-
-		// Log first 1000 chars of DOM for debugging
-		if len(domHTML) > 1000 {
-			b.logger.Debug("DOM snippet", zap.String("html", domHTML[:1000]+"..."))
-		} else {
-			b.logger.Debug("Full DOM", zap.String("html", domHTML))
+		if debugErr == nil {
+			b.logger.Info("Debug info after navigation failure",
+				zap.String("current_url", currentURL),
+				zap.String("title", title),
+				zap.String("ready_state", readyState))
 		}
 
 		return nil, fmt.Errorf("navigation failed: %w", err)
 	}
 
-	// Wait a bit and then log page state before extraction
-	time.Sleep(2 * time.Second)
+	b.logger.Info("Navigation successful, proceeding with extraction")
 
 	var currentURL, title, domHTML string
 	err = chromedp.Run(taskCtx,
@@ -160,11 +176,17 @@ func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, erro
 
 	var rawLinks []map[string]string
 	script := fmt.Sprintf(`
-		let links = Array.from(document.querySelectorAll('%s')).map(link => ({
-			href: link.href,
-			text: link.textContent.trim()
-		}));
+		let resultsDiv = document.querySelector('%s');
+		let links = [];
 		
+		if (resultsDiv) {
+			links = Array.from(resultsDiv.querySelectorAll('a[href]')).map(link => ({
+				href: link.href,
+				text: link.textContent.trim()
+			}));
+		}
+		
+		// Fallback to all links if no results div found
 		if (links.length === 0) {
 			links = Array.from(document.querySelectorAll('a[href]')).map(link => ({
 				href: link.href,
@@ -173,7 +195,7 @@ func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, erro
 		}
 		
 		links.filter(link => 
-			link.href && 
+			link.href &&
 			!link.href.startsWith('javascript:') &&
 			link.href.startsWith('https') &&
 			link.text.length > 0
@@ -183,6 +205,8 @@ func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, erro
 	err = chromedp.Run(taskCtx,
 		chromedp.Evaluate(script, &rawLinks),
 	)
+
+	b.logger.Info("success collecting links")
 
 	if err != nil {
 		b.logger.Error("Failed to extract links",

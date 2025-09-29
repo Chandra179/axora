@@ -90,7 +90,7 @@ func Crawl(worker *crawler.Crawler, browser crawler.Browser, embed embedding.Cli
 
 		fmt.Println(urls)
 
-		worker.Crawl(ctx, urls)
+		// worker.Crawl(ctx, urls)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Crawl started"))
 	}
