@@ -45,6 +45,7 @@ func NewCrawler(
 		colly.TraceHTTP(),
 		colly.ParseHTTPErrorResponse(),
 		colly.URLFilters(
+			regexp.MustCompile(`^https://.*$`),
 			regexp.MustCompile(`^https://libgen\.li/index\.php\?req=[^&]+$`),
 			regexp.MustCompile(`^https://libgen\.li/edition\.php\?id=[^&]+$`),
 			regexp.MustCompile(`^https://libgen\.li/ads\.php\?md5=[^&]+$`),
@@ -71,6 +72,7 @@ func NewCrawler(
 		httpClient:      *httpClient,
 		proxyUrl:        proxyUrl,
 		IpRotationDelay: 40 * time.Second,
+		downloadClient:  downloadClient,
 	}
 
 	return worker, nil

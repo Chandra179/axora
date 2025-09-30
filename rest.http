@@ -1,4 +1,4 @@
-GET http://localhost:8080/scrap?q=economy filetype:epub
+GET http://localhost:8080/scrap?q=economy
 
 curl -X POST \
   -H "Content-Type: application/json" \

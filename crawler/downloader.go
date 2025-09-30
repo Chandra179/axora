@@ -5,7 +5,6 @@ import (
 	"crypto/md5"
 	"crypto/sha1"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,35 +38,14 @@ func NewDownloadMgr(logger *zap.Logger, downloadPath string, httpClient *http.Cl
 }
 
 func (w *DownloadMgr) DownloadFile(ctx context.Context, url, contentDisposition, expectedMD5 string) error {
-	var fileName string
-	if strings.Contains(contentDisposition, "filename=") {
-		parts := strings.SplitN(contentDisposition, "filename=", 2)
-		if len(parts) == 2 {
-			name := strings.Trim(parts[1], "\"")
-			if name != "" {
-				fileName = fmt.Sprintf("%d-%s", time.Now().UnixNano(), uuid.NewString())
-			}
-		}
+	fileName := w.extractFilenameFromHeader(contentDisposition)
+
+	if fileName == "" {
+		fileName = fmt.Sprintf("%d-%s", time.Now().UnixNano(), uuid.NewString())
 	}
 
-	if len(fileName) > w.maxFileNameLen {
-		hash := sha1.New()
-		hash.Write([]byte(fileName))
-		hashStr := hex.EncodeToString(hash.Sum(nil))
-		extension := filepath.Ext(fileName)
-		base := fileName[:w.maxFileNameLen-len(extension)-8]
-		fileName = fmt.Sprintf("%s-%s%s", base, hashStr[:7], extension)
-	}
-
+	fileName = w.truncateFilename(fileName)
 	savePath := filepath.Join(w.downloadPath, fileName)
-	if _, err := os.Stat(savePath); err == nil && expectedMD5 != "" {
-		if err := w.ValidateDownload(savePath, expectedMD5); err == nil {
-			w.logger.Info("File already exists and is valid, skipping download",
-				zap.String("save_path", savePath))
-			return nil
-		}
-	}
-
 	currentIP, _ := GetPublicIP(ctx, w.httpClient)
 
 	w.logger.Info("Starting file download",
@@ -88,6 +66,7 @@ func (w *DownloadMgr) DownloadFile(ctx context.Context, url, contentDisposition,
 	}
 	req.Header.Set("User-Agent", "GoDownloader/1.0")
 
+	// Execute request
 	resp, err := w.httpClient.Do(req)
 	if err != nil {
 		w.logger.Error("HTTP request failed", zap.Error(err))
@@ -99,12 +78,14 @@ func (w *DownloadMgr) DownloadFile(ctx context.Context, url, contentDisposition,
 		return fmt.Errorf("server returned status %d", resp.StatusCode)
 	}
 
+	// Create the file
 	out, err := os.Create(savePath)
 	if err != nil {
 		return fmt.Errorf("failed to create file %s: %w", savePath, err)
 	}
 	defer out.Close()
 
+	// Download the file
 	_, err = io.Copy(out, resp.Body)
 	if err != nil {
 		return fmt.Errorf("copy error: %w", err)
@@ -112,31 +93,71 @@ func (w *DownloadMgr) DownloadFile(ctx context.Context, url, contentDisposition,
 
 	w.logger.Info("File download completed", zap.String("save_path", savePath))
 
-	if err := w.ValidateDownload(savePath, expectedMD5); err != nil {
-		os.Remove(savePath)
-		return err
+	// Validate MD5 only if expectedMD5 is provided
+	if expectedMD5 != "" {
+		if err := w.validateMD5(savePath, expectedMD5); err != nil {
+			os.Remove(savePath)
+			return err
+		}
+		w.logger.Info("MD5 verification successful", zap.String("md5", expectedMD5))
+	} else {
+		w.logger.Info("Skipping MD5 validation (no expected MD5 provided)")
 	}
-
-	w.logger.Info("MD5 verification successful", zap.String("md5", expectedMD5))
 
 	return nil
 }
 
-// ValidateDownload verifies the MD5 hash of a downloaded file
-func (w *DownloadMgr) ValidateDownload(filePath, expectedMD5 string) error {
-	if expectedMD5 == "" {
-		return errors.New("md5 required: " + expectedMD5)
+// extractFilenameFromHeader extracts the filename from Content-Disposition header
+// Returns empty string if not found or invalid
+func (w *DownloadMgr) extractFilenameFromHeader(contentDisposition string) string {
+	if !strings.Contains(contentDisposition, "filename=") {
+		return ""
 	}
 
+	parts := strings.SplitN(contentDisposition, "filename=", 2)
+	if len(parts) != 2 {
+		return ""
+	}
+
+	filename := strings.Trim(parts[1], "\"")
+	filename = strings.TrimSpace(filename)
+
+	return filename
+}
+
+// truncateFilename truncates a filename if it exceeds maxFileNameLen
+// Uses SHA1 hash to maintain uniqueness while shortening
+func (w *DownloadMgr) truncateFilename(filename string) string {
+	if len(filename) <= w.maxFileNameLen {
+		return filename
+	}
+
+	hash := sha1.New()
+	hash.Write([]byte(filename))
+	hashStr := hex.EncodeToString(hash.Sum(nil))
+
+	extension := filepath.Ext(filename)
+	maxBaseLen := w.maxFileNameLen - len(extension) - 8 // 8 chars for hash
+
+	if maxBaseLen < 0 {
+		maxBaseLen = 0
+	}
+
+	base := filename[:maxBaseLen]
+	return fmt.Sprintf("%s-%s%s", base, hashStr[:7], extension)
+}
+
+// validateMD5 verifies the MD5 hash of a downloaded file
+func (w *DownloadMgr) validateMD5(filePath, expectedMD5 string) error {
 	file, err := os.Open(filePath)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open file for validation: %w", err)
 	}
 	defer file.Close()
 
 	hash := md5.New()
 	if _, err := io.Copy(hash, file); err != nil {
-		return err
+		return fmt.Errorf("failed to compute MD5: %w", err)
 	}
 
 	actualMD5 := fmt.Sprintf("%x", hash.Sum(nil))
@@ -146,33 +167,4 @@ func (w *DownloadMgr) ValidateDownload(filePath, expectedMD5 string) error {
 	}
 
 	return nil
-}
-
-// ExtractFilename extracts filename from Content-Disposition header
-func (w *DownloadMgr) ExtractFilename(contentDisposition string) string {
-	defaultName := "download.bin"
-
-	if !strings.Contains(contentDisposition, "filename=") {
-		return defaultName
-	}
-
-	parts := strings.Split(contentDisposition, "filename=")
-	if len(parts) < 2 {
-		return defaultName
-	}
-
-	filename := strings.Trim(parts[1], "\"")
-	if filename == "" {
-		return defaultName
-	}
-
-	if len(filename) > w.maxFileNameLen {
-		hash := sha1.New()
-		hash.Write([]byte(filename))
-		hashStr := hex.EncodeToString(hash.Sum(nil))
-		extension := filepath.Ext(filename)
-		base := filename[:w.maxFileNameLen-len(extension)-8]
-		return fmt.Sprintf("%s-%s%s", base, hashStr[:7], extension)
-	}
-	return filename
 }
