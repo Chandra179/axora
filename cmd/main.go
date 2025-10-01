@@ -42,14 +42,14 @@ func main() {
 	// ==========
 	httpClient, httpTransport := NewHttpClient(cfg.ProxyURL)
 	logger, _ := zap.NewProduction()
-	downloadMgr := crawler.NewDownloadMgr(logger, cfg.DownloadPath, httpClient)
+	downloadMgr := crawler.NewDownloadMgr(logger, cfg.DownloadHost, cfg.ClamAvHost, httpClient)
 	// extractor := crawler.NewContentExtractor()
 	browser := crawler.NewBrowser(logger, cfg.ProxyURL)
 	mpnetbasev2 := embedding.NewMpnetBaseV2(cfg.AllMinilmL6V2URL)
 	// recurCharChunking := chunking.NewRecursiveCharacterChunking(mpnetbasev2)
 	pdfPro := textExtr.NewPDFExtractor(logger)
 	epubPro := textExtr.NewEpubExtractor(logger)
-	fp := textExtr.NewCore(pdfPro, epubPro, cfg.DownloadPath, logger)
+	fp := textExtr.NewCore(pdfPro, epubPro, cfg.DownloadHost, logger)
 	worker, err := crawler.NewCrawler(
 		cfg.ProxyURL,
 		httpClient,

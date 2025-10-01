@@ -18,7 +18,8 @@ type Config struct {
 	ProxyURL      string
 	TorControlURL string
 
-	DownloadPath string
+	DownloadHost string
+	ClamAvHost   string
 }
 
 func Load() (*Config, error) {
@@ -43,7 +44,8 @@ func Load() (*Config, error) {
 		ChunkingURL: getEnv("CHUNKING_URL"),
 		ProxyURL:    getEnv("PROXY_URL"),
 
-		DownloadPath: getEnv("DOWNLOAD_PATH"),
+		DownloadHost: getEnv("DOWNLOAD_PATH"),
+		ClamAvHost:   getEnv("CLAMAV_HOST"),
 	}, nil
 }
 

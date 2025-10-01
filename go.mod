@@ -5,10 +5,12 @@ go 1.25.0
 require (
 	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327
 	github.com/chromedp/chromedp v0.14.1
+	github.com/dutchcoders/go-clamd v0.0.0-20170520113014-b970184f4d9e
 	github.com/gen2brain/go-fitz v1.24.15
 	github.com/go-shiori/go-readability v0.0.0-20250217085726-9f5bf5ca7612
 	github.com/gocolly/colly/v2 v2.2.0
 	github.com/google/uuid v1.6.0
+	github.com/h2non/filetype v1.1.3
 	github.com/otiai10/gosseract/v2 v2.4.1
 	github.com/qdrant/go-client v1.15.2
 	github.com/tmc/langchaingo v0.1.13

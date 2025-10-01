@@ -48,6 +48,7 @@ services:
       CHUNKING_URL: ${CHUNKING_URL}
       PROXY_URL: ${PROXY_URL}
       DOWNLOAD_PATH: ${DOWNLOAD_PATH}
+      CLAMAV_HOST: ${CLAMAV_HOST}
       DOCKER_BUILDKIT: 1
     ports:
       - "8080:8080"
@@ -57,6 +58,8 @@ services:
       - axora-network
     depends_on:
       axora-mpnetbasev2:
+        condition: service_healthy
+      axora-clamav:
         condition: service_healthy
     deploy:
       resources:
@@ -115,6 +118,18 @@ services:
       TOR_EXIT_COUNTRY: jp,tw,th,id,sg
     networks:
       - axora-network
+
+  axora-clamav:
+    image: clamav/clamav:latest
+    container_name: axora-clamav
+    ports:
+      - "3310:3310"
+    healthcheck:
+      test: ["CMD", "clamdscan", "--ping", "1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s  # ClamAV needs time to load definitions
 
 volumes:
   qdrant_storage:
