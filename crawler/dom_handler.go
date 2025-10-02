@@ -48,7 +48,6 @@ func (w *Crawler) OnHTMLDOMLog(ctx context.Context) colly.HTMLCallback {
 		w.logger.Info("HTML DOM Structure",
 			zap.String("url", url),
 			zap.Int("links_count", len(links)),
-			// zap.Strings("links", links),
 			zap.Int("book_links_count", len(bookLinks)),
 			zap.Strings("book_links", bookLinks))
 	}
@@ -65,16 +64,16 @@ func (w *Crawler) OnError(ctx context.Context, collector *colly.Collector) colly
 // OnResponse handles successful responses and downloads
 func (w *Crawler) OnResponse(ctx context.Context) colly.ResponseCallback {
 	return func(r *colly.Response) {
-		w.logger.Info("onrepsonse: " + r.Request.URL.String())
-		if w.host == "libgen" {
-			contentType := r.Headers.Get("Content-Type")
-			contentDisposition := r.Headers.Get("Content-Disposition")
 
-			if strings.Contains(strings.ToLower(contentDisposition), "attachment") &&
-				contentType != "application/octet-stream" {
-				// TODO: append only log
-				return
-			}
+		url := r.Request.URL.String()
+		contentType := r.Headers.Get("Content-Type")
+		contentDisposition := r.Headers.Get("Content-Disposition")
+
+		if BooksdlPattern.MatchString(url) &&
+			strings.Contains(strings.ToLower(contentDisposition), "attachment") &&
+			contentType != "application/octet-stream" {
+			w.logger.Info("match: " + r.Request.URL.String())
+			return
 		}
 
 		doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(r.Body)))
@@ -87,7 +86,7 @@ func (w *Crawler) OnResponse(ctx context.Context) colly.ResponseCallback {
 		searchable := strings.ToLower(title + " " + metaDesc)
 
 		if containsStem(searchable, w.keyword) {
-			// TODO: append only log
+			w.logger.Info("match: " + r.Request.URL.String())
 			return
 		}
 	}

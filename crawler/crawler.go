@@ -14,6 +14,10 @@ import (
 
 type ContextKey string
 
+var BooksdlPattern = regexp.MustCompile(
+	`^https://[^.]+\.booksdl\.lc/get\.php\?md5=[^&]+&key=[^&]+$`,
+)
+
 const (
 	ContextIDKey ContextKey = "context_id"
 	IPKey        ContextKey = "ip"
@@ -27,8 +31,6 @@ type Crawler struct {
 	httpClient      http.Client
 	proxyUrl        string
 	IpRotationDelay time.Duration
-	urls            []string
-	host            string
 	keyword         string
 }
 
@@ -37,11 +39,7 @@ func NewCrawler(
 	httpClient *http.Client,
 	httpTransport *http.Transport,
 	logger *zap.Logger,
-	urls []string,
-	urlsFilter []*regexp.Regexp,
-	host string,
-	keyword string,
-) *Crawler {
+) (*Crawler, error) {
 	c := colly.NewCollector(
 		colly.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "+
 			"(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
@@ -49,7 +47,14 @@ func NewCrawler(
 		colly.Async(true),
 		colly.TraceHTTP(),
 		colly.ParseHTTPErrorResponse(),
-		colly.URLFilters(urlsFilter...),
+		colly.URLFilters(
+			regexp.MustCompile(`^https://.*$`),
+			regexp.MustCompile(`^https://libgen\.li/index\.php\?req=[^&]+$`),
+			regexp.MustCompile(`^https://libgen\.li/edition\.php\?id=[^&]+$`),
+			regexp.MustCompile(`^https://libgen\.li/ads\.php\?md5=[^&]+$`),
+			regexp.MustCompile(`^https://libgen\.li/get\.php\?md5=[^&]+&key=[^&]+$`),
+			BooksdlPattern,
+		),
 		// colly.Debugger(&debug.LogDebugger{}),
 	)
 
@@ -58,8 +63,8 @@ func NewCrawler(
 	c.SetRequestTimeout(180 * time.Minute)
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 20,
-		Delay:       5 * time.Second,
+		Parallelism: 100,
+		Delay:       3 * time.Second,
 	})
 	c.IgnoreRobotsTxt = true
 
@@ -72,10 +77,10 @@ func NewCrawler(
 		IpRotationDelay: 40 * time.Second,
 	}
 
-	return worker
+	return worker, nil
 }
 
-func (w *Crawler) Crawl(ctx context.Context) error {
+func (w *Crawler) Crawl(ctx context.Context, urls chan string, keyword string) error {
 	contextId := GenerateContextID()
 	ip, _ := GetPublicIP(ctx, &w.httpClient)
 	ctx = context.WithValue(ctx, ContextIDKey, contextId)
@@ -89,11 +94,12 @@ func (w *Crawler) Crawl(ctx context.Context) error {
 	w.collector.OnHTML("a[href]", w.OnHTML(ctx))
 	w.collector.OnError(w.OnError(ctx, w.collector))
 	w.collector.OnResponse(w.OnResponse(ctx))
+	w.keyword = keyword
 
-	for _, urlStr := range w.urls {
-		if err := w.collector.Visit(urlStr); err != nil {
+	for url := range urls {
+		if err := w.collector.Visit(url); err != nil {
 			w.logger.Error("Failed to visit URL",
-				zap.String("url", urlStr),
+				zap.String("url", url),
 				zap.Error(err))
 		}
 	}

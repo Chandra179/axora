@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/chromedp/cdproto/cdp"
@@ -23,10 +24,9 @@ type Browser struct {
 	SupportedEngines []SearchEngine
 	ChromedpOptions  []chromedp.ExecAllocatorOption
 
-	maxPages         int
-	currentPage      int
-	pageDelay        time.Duration
-	allCollectedURLs []string
+	maxPages    int
+	currentPage int
+	pageDelay   time.Duration
 }
 
 func NewBrowser(logger *zap.Logger, proxyURL string) *Browser {
@@ -61,25 +61,24 @@ func NewBrowser(logger *zap.Logger, proxyURL string) *Browser {
 			chromedp.Flag("disable-extensions", ""),
 			chromedp.ProxyServer(proxyURL),
 		),
-		maxPages:         50,
-		currentPage:      0,
-		pageDelay:        time.Second * 2,
-		allCollectedURLs: []string{},
+		maxPages:    50,
+		currentPage: 0,
+		pageDelay:   time.Second * 2,
 	}
 }
 
-func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, error) {
+func (b *Browser) CollectUrls(ctx context.Context, query string, collectedUrls chan string) error {
 	engine := b.SupportedEngines[1]
 
 	taskCtx, cancel, err := b.setupBrowserContext(ctx, time.Minute*5)
 	if err != nil {
-		return nil, fmt.Errorf("failed to setup browser context: %w", err)
+		return fmt.Errorf("failed to setup browser context: %w", err)
 	}
 	defer cancel()
 
 	searchURL := fmt.Sprintf(engine.URLTemplate, url.QueryEscape(query))
 	if err := b.navigateToPage(taskCtx, searchURL, engine.Name); err != nil {
-		return nil, fmt.Errorf("failed to navigate to first page: %w", err)
+		return fmt.Errorf("failed to navigate to first page: %w", err)
 	}
 
 	for b.currentPage < b.maxPages {
@@ -102,11 +101,12 @@ func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, erro
 				zap.Error(err),
 				zap.Int("page", b.currentPage))
 		} else {
-			b.allCollectedURLs = append(b.allCollectedURLs, urls...)
+			for _, link := range urls {
+				collectedUrls <- link
+			}
 			b.logger.Info("Collected URLs from page",
 				zap.Int("page", b.currentPage),
 				zap.Int("urls_this_page", len(urls)),
-				zap.Int("total_urls", len(b.allCollectedURLs)),
 			)
 		}
 
@@ -138,10 +138,9 @@ func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, erro
 
 	b.logger.Info("Crawling completed",
 		zap.Int("total_pages", b.currentPage),
-		zap.Int("total_urls", len(b.allCollectedURLs)),
 		zap.String("engine", engine.Name))
 
-	return b.allCollectedURLs, nil
+	return nil
 }
 
 func (b *Browser) setupBrowserContext(ctx context.Context, timeout time.Duration) (context.Context, context.CancelFunc, error) {
@@ -253,8 +252,22 @@ func (b *Browser) extractLinksFromCurrentPage(ctx context.Context, engine Search
 	}
 
 	var results []string
+	resultsCh := make(chan string, len(rawLinks))
+
+	var wg sync.WaitGroup
 	for _, link := range rawLinks {
-		results = append(results, link["href"])
+		wg.Add(1)
+		go func(l map[string]string) {
+			defer wg.Done()
+			resultsCh <- l["href"]
+		}(link)
+	}
+
+	wg.Wait()
+	close(resultsCh)
+
+	for href := range resultsCh {
+		results = append(results, href)
 	}
 
 	return results, nil
