@@ -107,7 +107,6 @@ func (b *Browser) CollectUrls(ctx context.Context, query string) ([]string, erro
 				zap.Int("page", b.currentPage),
 				zap.Int("urls_this_page", len(urls)),
 				zap.Int("total_urls", len(b.allCollectedURLs)),
-				zap.Strings("urls", urls),
 			)
 		}
 

@@ -1,6 +1,1 @@
 GET http://localhost:8080/scrap?q=economy
-
-curl -X POST \
-  -H "Content-Type: application/json" \
-  -d '{"text": "In a quiet village nestled between rolling hills and a winding river, a community of artisans practiced their age-old crafts. The blacksmith’s hammer rang out in a rhythmic clang, a sound that echoed the heartbeat of the village. The weaver’s loom worked tirelessly, transforming threads of wool and cotton into vibrant tapestries that told stories of the land and its people. Meanwhile, the potter’s wheel spun, molding clay into elegant vessels that were both functional and beautiful. Each artisan contributed to the rich tapestry of life in the village, their skills passed down through generations. This collective creativity fostered a deep sense of pride and identity, making their small village a beacon of artistic tradition. The villagers understood that their work was more than just a means of survival; it was a way of preserving their history and soul. Their creations were not just objects, but living testaments to their enduring spirit and a profound respect for the past."}' \
-  http://localhost:8001/chunk

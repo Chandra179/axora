@@ -5,7 +5,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly/v2"
+	"github.com/kljensen/snowball"
 	"go.uber.org/zap"
 )
 
@@ -64,28 +66,41 @@ func (w *Crawler) OnError(ctx context.Context, collector *colly.Collector) colly
 func (w *Crawler) OnResponse(ctx context.Context) colly.ResponseCallback {
 	return func(r *colly.Response) {
 		w.logger.Info("onrepsonse: " + r.Request.URL.String())
-		contentType := r.Headers.Get("Content-Type")
-		contentDisposition := r.Headers.Get("Content-Disposition")
+		if w.host == "libgen" {
+			contentType := r.Headers.Get("Content-Type")
+			contentDisposition := r.Headers.Get("Content-Disposition")
 
-		if !strings.Contains(strings.ToLower(contentDisposition), "attachment") &&
-			contentType != "application/octet-stream" {
-			return
+			if strings.Contains(strings.ToLower(contentDisposition), "attachment") &&
+				contentType != "application/octet-stream" {
+				// TODO: append only log
+				return
+			}
 		}
 
-		go func(r *colly.Response) {
-			u := r.Request.URL
-			q := u.Query()
-			md5hash := q.Get("md5")
+		doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(r.Body)))
+		if err != nil {
+			w.logger.Error("failed parsing HTML: " + err.Error())
+			return
+		}
+		title := doc.Find("title").Text()
+		metaDesc, _ := doc.Find("meta[name=description]").Attr("content")
+		searchable := strings.ToLower(title + " " + metaDesc)
 
-			err := w.downloadClient.DownloadFile(ctx, u.String(), contentDisposition, md5hash)
-			if err != nil {
-				w.logger.Error("Download failed",
-					zap.String("md5", md5hash),
-					zap.Error(err))
-			} else {
-				w.logger.Info("Download completed successfully",
-					zap.String("md5", md5hash))
-			}
-		}(r)
+		if containsStem(searchable, w.keyword) {
+			// TODO: append only log
+			return
+		}
 	}
+}
+
+func containsStem(text, keyword string) bool {
+	words := strings.Fields(text)
+	stemKeyword, _ := snowball.Stem(keyword, "english", true)
+	for _, w := range words {
+		stemWord, _ := snowball.Stem(w, "english", true)
+		if stemWord == stemKeyword {
+			return true
+		}
+	}
+	return false
 }

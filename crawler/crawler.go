@@ -27,7 +27,9 @@ type Crawler struct {
 	httpClient      http.Client
 	proxyUrl        string
 	IpRotationDelay time.Duration
-	downloadClient  DownloadClient
+	urls            []string
+	host            string
+	keyword         string
 }
 
 func NewCrawler(
@@ -35,8 +37,11 @@ func NewCrawler(
 	httpClient *http.Client,
 	httpTransport *http.Transport,
 	logger *zap.Logger,
-	downloadClient DownloadClient,
-) (*Crawler, error) {
+	urls []string,
+	urlsFilter []*regexp.Regexp,
+	host string,
+	keyword string,
+) *Crawler {
 	c := colly.NewCollector(
 		colly.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "+
 			"(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
@@ -44,14 +49,7 @@ func NewCrawler(
 		colly.Async(true),
 		colly.TraceHTTP(),
 		colly.ParseHTTPErrorResponse(),
-		colly.URLFilters(
-			regexp.MustCompile(`^https://.*$`),
-			regexp.MustCompile(`^https://libgen\.li/index\.php\?req=[^&]+$`),
-			regexp.MustCompile(`^https://libgen\.li/edition\.php\?id=[^&]+$`),
-			regexp.MustCompile(`^https://libgen\.li/ads\.php\?md5=[^&]+$`),
-			regexp.MustCompile(`^https://libgen\.li/get\.php\?md5=[^&]+&key=[^&]+$`),
-			regexp.MustCompile(`^https://[^.]+\.booksdl\.lc/get\.php\?md5=[^&]+&key=[^&]+$`),
-		),
+		colly.URLFilters(urlsFilter...),
 		// colly.Debugger(&debug.LogDebugger{}),
 	)
 
@@ -60,7 +58,7 @@ func NewCrawler(
 	c.SetRequestTimeout(180 * time.Minute)
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 10,
+		Parallelism: 20,
 		Delay:       5 * time.Second,
 	})
 	c.IgnoreRobotsTxt = true
@@ -72,13 +70,12 @@ func NewCrawler(
 		httpClient:      *httpClient,
 		proxyUrl:        proxyUrl,
 		IpRotationDelay: 40 * time.Second,
-		downloadClient:  downloadClient,
 	}
 
-	return worker, nil
+	return worker
 }
 
-func (w *Crawler) Crawl(ctx context.Context, urls []string) error {
+func (w *Crawler) Crawl(ctx context.Context) error {
 	contextId := GenerateContextID()
 	ip, _ := GetPublicIP(ctx, &w.httpClient)
 	ctx = context.WithValue(ctx, ContextIDKey, contextId)
@@ -89,8 +86,11 @@ func (w *Crawler) Crawl(ctx context.Context, urls []string) error {
 		zap.String(string(IPKey), ip),
 	)
 
-	w.setupEventHandlers(ctx)
-	for _, urlStr := range urls {
+	w.collector.OnHTML("a[href]", w.OnHTML(ctx))
+	w.collector.OnError(w.OnError(ctx, w.collector))
+	w.collector.OnResponse(w.OnResponse(ctx))
+
+	for _, urlStr := range w.urls {
 		if err := w.collector.Visit(urlStr); err != nil {
 			w.logger.Error("Failed to visit URL",
 				zap.String("url", urlStr),
@@ -101,13 +101,6 @@ func (w *Crawler) Crawl(ctx context.Context, urls []string) error {
 	w.logger.Info("Crawl session completed")
 
 	return nil
-}
-
-func (w *Crawler) setupEventHandlers(ctx context.Context) {
-	w.collector.OnHTML("a[href]", w.OnHTML(ctx))
-	w.collector.OnError(w.OnError(ctx, w.collector))
-	w.collector.OnResponse(w.OnResponse(ctx))
-	// w.collector.OnHTML("html", w.OnHTMLDOMLog(ctx))
 }
 
 func GenerateContextID() string {

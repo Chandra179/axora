@@ -7,19 +7,8 @@ import (
 )
 
 type Config struct {
-	AppPort int
-
-	AllMinilmL6V2URL string
-
-	QdrantHost string
-	QdrantPort int
-
-	ChunkingURL   string
-	ProxyURL      string
-	TorControlURL string
-
-	DownloadHost string
-	ClamAvHost   string
+	AppPort  int
+	ProxyURL string
 }
 
 func Load() (*Config, error) {
@@ -28,24 +17,9 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
-	qdrantPort, err := strconv.Atoi(getEnv("QDRANT_GRPC_PORT"))
-	if err != nil {
-		return nil, err
-	}
-
 	return &Config{
-		AppPort: appPort,
-
-		AllMinilmL6V2URL: getEnv("MPNETBASEV2_URL"),
-
-		QdrantPort: qdrantPort,
-		QdrantHost: getEnv("QDRANT_HOST"),
-
-		ChunkingURL: getEnv("CHUNKING_URL"),
-		ProxyURL:    getEnv("PROXY_URL"),
-
-		DownloadHost: getEnv("DOWNLOAD_PATH"),
-		ClamAvHost:   getEnv("CLAMAV_HOST"),
+		AppPort:  appPort,
+		ProxyURL: getEnv("PROXY_URL"),
 	}, nil
 }
 
