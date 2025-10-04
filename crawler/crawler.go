@@ -14,7 +14,7 @@ import (
 
 type ContextKey string
 
-var BooksdlPattern = `^https://[^.]+\.booksdl\.lc/get\.php\?md5=[^&]+&key=[^&]+$`
+var BooksdlPattern = `^https://[^.]+\.booksdl\.lc/get\.php\?md5=[^&]+(?:&key=[^&]+)?$`
 
 const (
 	ContextIDKey ContextKey = "context_id"

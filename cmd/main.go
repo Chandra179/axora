@@ -27,7 +27,7 @@ func main() {
 		log.Fatalf("failed to create logger: %v", err)
 	}
 
-	browser := crawler.NewBrowser(logger, cfg.ProxyURL)
+	// browser := crawler.NewBrowser(logger, cfg.ProxyURL)
 	httpClient, httpTransport := NewHttpClient(cfg.ProxyURL)
 	pg, err := postgres.NewClient(cfg.PostgresDBUrl)
 	if err != nil {
@@ -50,21 +50,21 @@ func main() {
 			http.Error(w, "missing q parameter", http.StatusBadRequest)
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Hour)
-		defer cancel()
 
 		libgenUrl := "https://libgen.li/index.php?req=" + q
 		ch := make(chan string, 500)
 		ch <- libgenUrl
 
 		go func() {
+			ctx, cancel := context.WithTimeout(r.Context(), 3*time.Hour)
+			defer cancel()
 			crawler.Crawl(ctx, ch, q)
 		}()
 
-		err := browser.CollectUrls(ctx, q+" filetype:epub", ch)
-		if err != nil {
-			fmt.Println("HAHAHA")
-		}
+		// err := browser.CollectUrls(ctx, q+" filetype:epub", ch)
+		// if err != nil {
+		// 	fmt.Println("HAHAHA")
+		// }
 
 		close(ch)
 		w.WriteHeader(http.StatusOK)

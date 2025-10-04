@@ -2,7 +2,6 @@ package crawler
 
 import (
 	"context"
-	"regexp"
 	"strings"
 	"time"
 
@@ -66,41 +65,34 @@ func (w *Crawler) OnResponse(ctx context.Context) colly.ResponseCallback {
 		contentType := r.Headers.Get("Content-Type")
 		contentDisposition := r.Headers.Get("Content-Disposition")
 
-		isDownloadable := strings.Contains(strings.ToLower(contentDisposition), "attachment") &&
-			contentType != "application/octet-stream"
+		isDownloadable :=
+			(strings.Contains(strings.ToLower(contentDisposition), "attachment") &&
+				contentType == "application/octet-stream") ||
+				contentType == "application/pdf"
 
 		doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(r.Body)))
 		if err != nil {
 			w.logger.Error("failed parsing HTML: " + err.Error())
 			return
 		}
-
 		title := doc.Find("title").Text()
 		metaDesc, _ := doc.Find("meta[name=description]").Attr("content")
-		searchable := strings.ToLower(title + " " + metaDesc)
-		isCotainKeyword := containsStem(searchable, w.keyword)
+		searchable := strings.ToLower(title + " " + metaDesc + contentDisposition)
+		isContain := containsStem(searchable, w.keyword)
 
-		if isDownloadable {
-			isMatch, err := regexp.MatchString(BooksdlPattern, url)
-			if err != nil {
-				w.logger.Info("error matching regex: " + err.Error())
+		if isDownloadable && isContain {
+			if err := w.crawlDoc.InsertOne(context.Background(), url, true, "pending"); err != nil {
+				w.logger.Info("failed insert 1: " + err.Error())
 			}
-			if isMatch {
-				w.crawlDoc.InsertOne(ctx, url, true, "pending")
-				w.logger.Info("match1.0: " + r.Request.URL.String())
-				return
-			}
-			if isCotainKeyword {
-				w.crawlDoc.InsertOne(ctx, url, true, "pending")
-				w.logger.Info("match1.1: " + r.Request.URL.String())
-			}
+			w.logger.Info("match1: " + r.Request.URL.String())
 			return
 		}
-
-		if isCotainKeyword {
-			w.crawlDoc.InsertOne(ctx, url, false, "pending")
-			w.logger.Info("match2: " + r.Request.URL.String())
+		if isContain {
+			if err := w.crawlDoc.InsertOne(context.Background(), url, false, "pending"); err != nil {
+				w.logger.Info("failed insert 3: " + err.Error())
+			}
 		}
+
 	}
 }
 
