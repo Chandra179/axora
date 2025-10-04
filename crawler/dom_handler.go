@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"time"
 
@@ -24,7 +25,6 @@ func (w *Crawler) OnHTMLDOMLog(ctx context.Context) colly.HTMLCallback {
 	return func(e *colly.HTMLElement) {
 		url := e.Request.URL.String()
 
-		// Log all links found
 		var links []string
 		var bookLinks []string
 
@@ -53,7 +53,6 @@ func (w *Crawler) OnHTMLDOMLog(ctx context.Context) colly.HTMLCallback {
 	}
 }
 
-// OnError handles error events with retry logic
 func (w *Crawler) OnError(ctx context.Context, collector *colly.Collector) colly.ErrorCallback {
 	return func(r *colly.Response, err error) {
 		time.Sleep(w.IpRotationDelay)
@@ -61,33 +60,46 @@ func (w *Crawler) OnError(ctx context.Context, collector *colly.Collector) colly
 	}
 }
 
-// OnResponse handles successful responses and downloads
 func (w *Crawler) OnResponse(ctx context.Context) colly.ResponseCallback {
 	return func(r *colly.Response) {
-
 		url := r.Request.URL.String()
 		contentType := r.Headers.Get("Content-Type")
 		contentDisposition := r.Headers.Get("Content-Disposition")
 
-		if BooksdlPattern.MatchString(url) &&
-			strings.Contains(strings.ToLower(contentDisposition), "attachment") &&
-			contentType != "application/octet-stream" {
-			w.logger.Info("match: " + r.Request.URL.String())
-			return
-		}
+		isDownloadable := strings.Contains(strings.ToLower(contentDisposition), "attachment") &&
+			contentType != "application/octet-stream"
 
 		doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(r.Body)))
 		if err != nil {
 			w.logger.Error("failed parsing HTML: " + err.Error())
 			return
 		}
+
 		title := doc.Find("title").Text()
 		metaDesc, _ := doc.Find("meta[name=description]").Attr("content")
 		searchable := strings.ToLower(title + " " + metaDesc)
+		isCotainKeyword := containsStem(searchable, w.keyword)
 
-		if containsStem(searchable, w.keyword) {
-			w.logger.Info("match: " + r.Request.URL.String())
+		if isDownloadable {
+			isMatch, err := regexp.MatchString(BooksdlPattern, url)
+			if err != nil {
+				w.logger.Info("error matching regex: " + err.Error())
+			}
+			if isMatch {
+				w.crawlDoc.InsertOne(ctx, url, true, "pending")
+				w.logger.Info("match1.0: " + r.Request.URL.String())
+				return
+			}
+			if isCotainKeyword {
+				w.crawlDoc.InsertOne(ctx, url, true, "pending")
+				w.logger.Info("match1.1: " + r.Request.URL.String())
+			}
 			return
+		}
+
+		if isCotainKeyword {
+			w.crawlDoc.InsertOne(ctx, url, false, "pending")
+			w.logger.Info("match2: " + r.Request.URL.String())
 		}
 	}
 }

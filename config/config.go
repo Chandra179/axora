@@ -7,8 +7,9 @@ import (
 )
 
 type Config struct {
-	AppPort  int
-	ProxyURL string
+	AppPort       int
+	ProxyURL      string
+	PostgresDBUrl string
 }
 
 func Load() (*Config, error) {
@@ -18,8 +19,9 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		AppPort:  appPort,
-		ProxyURL: getEnv("PROXY_URL"),
+		AppPort:       appPort,
+		ProxyURL:      getEnv("PROXY_URL"),
+		PostgresDBUrl: getEnv("POSTGRES_DB_URL"),
 	}, nil
 }
 

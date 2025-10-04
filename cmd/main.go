@@ -12,6 +12,7 @@ import (
 
 	"axora/config"
 	"axora/crawler"
+	"axora/pkg/postgres"
 
 	"go.uber.org/zap"
 )
@@ -21,15 +22,27 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
-	logger, _ := zap.NewProduction()
+	logger, err := zap.NewProduction()
+	if err != nil {
+		log.Fatalf("failed to create logger: %v", err)
+	}
+
 	browser := crawler.NewBrowser(logger, cfg.ProxyURL)
 	httpClient, httpTransport := NewHttpClient(cfg.ProxyURL)
-	crawler, _ := crawler.NewCrawler(
+	pg, err := postgres.NewClient(cfg.PostgresDBUrl)
+	if err != nil {
+		logger.Fatal("failed to create postgres client", zap.Error(err))
+	}
+	crawler, err := crawler.NewCrawler(
 		cfg.ProxyURL,
 		httpClient,
 		httpTransport,
 		logger,
+		pg,
 	)
+	if err != nil {
+		logger.Fatal("failed to create crawler", zap.Error(err))
+	}
 
 	h := func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query().Get("q")
@@ -41,7 +54,7 @@ func main() {
 		defer cancel()
 
 		libgenUrl := "https://libgen.li/index.php?req=" + q
-		ch := make(chan string, 100)
+		ch := make(chan string, 500)
 		ch <- libgenUrl
 
 		go func() {

@@ -10,11 +10,17 @@ services:
     environment:
       APP_PORT: 8080
       PROXY_URL: http://axora-tor-proxy:3128
+      POSTGRES_DB_URL: postgres://postgres:postgres@axora-postgres:5432/axora?sslmode=disable
       DOCKER_BUILDKIT: 1
     ports:
       - "8080:8080"
     networks:
       - axora-network
+    depends_on:
+      axora-postgres:
+        condition: service_healthy
+      axora-tor-proxy:
+        condition: service_started
     deploy:
       resources:
         limits:
@@ -36,6 +42,39 @@ services:
     networks:
       - axora-network
 
+  axora-postgres:
+    image: postgres:16-alpine
+    container_name: axora-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: axora
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - axora-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  adminer:
+    image: adminer
+    container_name: axora-adminer
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    networks:
+      - axora-network
+
 networks:
   axora-network:
     driver: bridge
+
+volumes:
+  postgres_data:

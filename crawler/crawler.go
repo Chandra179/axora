@@ -14,9 +14,7 @@ import (
 
 type ContextKey string
 
-var BooksdlPattern = regexp.MustCompile(
-	`^https://[^.]+\.booksdl\.lc/get\.php\?md5=[^&]+&key=[^&]+$`,
-)
+var BooksdlPattern = `^https://[^.]+\.booksdl\.lc/get\.php\?md5=[^&]+&key=[^&]+$`
 
 const (
 	ContextIDKey ContextKey = "context_id"
@@ -27,11 +25,11 @@ const (
 type Crawler struct {
 	collector       *colly.Collector
 	logger          *zap.Logger
-	maxRetries      int
 	httpClient      http.Client
 	proxyUrl        string
 	IpRotationDelay time.Duration
 	keyword         string
+	crawlDoc        CrawlDocClient
 }
 
 func NewCrawler(
@@ -39,6 +37,7 @@ func NewCrawler(
 	httpClient *http.Client,
 	httpTransport *http.Transport,
 	logger *zap.Logger,
+	crawlDoc CrawlDocClient,
 ) (*Crawler, error) {
 	c := colly.NewCollector(
 		colly.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "+
@@ -53,7 +52,7 @@ func NewCrawler(
 			regexp.MustCompile(`^https://libgen\.li/edition\.php\?id=[^&]+$`),
 			regexp.MustCompile(`^https://libgen\.li/ads\.php\?md5=[^&]+$`),
 			regexp.MustCompile(`^https://libgen\.li/get\.php\?md5=[^&]+&key=[^&]+$`),
-			BooksdlPattern,
+			regexp.MustCompile(BooksdlPattern),
 		),
 		// colly.Debugger(&debug.LogDebugger{}),
 	)
@@ -63,18 +62,18 @@ func NewCrawler(
 	c.SetRequestTimeout(180 * time.Minute)
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 100,
-		Delay:       3 * time.Second,
+		Parallelism: 700,
+		Delay:       2 * time.Second,
 	})
 	c.IgnoreRobotsTxt = true
 
 	worker := &Crawler{
 		collector:       c,
 		logger:          logger,
-		maxRetries:      3,
 		httpClient:      *httpClient,
 		proxyUrl:        proxyUrl,
 		IpRotationDelay: 40 * time.Second,
+		crawlDoc:        crawlDoc,
 	}
 
 	return worker, nil
