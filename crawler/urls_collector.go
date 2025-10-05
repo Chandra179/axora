@@ -93,6 +93,7 @@ func (b *Browser) CollectUrls(ctx context.Context, query string, collectedUrls c
 			b.logger.Warn("Page state check failed",
 				zap.Error(err),
 				zap.Int("page", b.currentPage))
+			return err
 		}
 
 		urls, err := b.extractLinksFromCurrentPage(taskCtx, engine)
@@ -100,6 +101,7 @@ func (b *Browser) CollectUrls(ctx context.Context, query string, collectedUrls c
 			b.logger.Error("Failed to extract links from page",
 				zap.Error(err),
 				zap.Int("page", b.currentPage))
+			return err
 		} else {
 			for _, link := range urls {
 				collectedUrls <- link
@@ -122,7 +124,7 @@ func (b *Browser) CollectUrls(ctx context.Context, query string, collectedUrls c
 			b.logger.Error("Failed to navigate to next page",
 				zap.Error(err),
 				zap.Int("current_page", b.currentPage))
-			break
+			return err
 		}
 
 		if !hasNext {

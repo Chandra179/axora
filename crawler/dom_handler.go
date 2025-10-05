@@ -13,6 +13,7 @@ import (
 
 func (w *Crawler) OnHTML(ctx context.Context) colly.HTMLCallback {
 	return func(e *colly.HTMLElement) {
+		w.logger.Info("onhtml: " + e.Request.ProxyURL)
 		href := e.Attr("href")
 		absoluteURL := e.Request.AbsoluteURL(href)
 
@@ -54,6 +55,7 @@ func (w *Crawler) OnHTMLDOMLog(ctx context.Context) colly.HTMLCallback {
 
 func (w *Crawler) OnError(ctx context.Context, collector *colly.Collector) colly.ErrorCallback {
 	return func(r *colly.Response, err error) {
+		w.logger.Info("onerror: " + err.Error())
 		time.Sleep(w.IpRotationDelay)
 		r.Request.Retry()
 	}
@@ -62,6 +64,8 @@ func (w *Crawler) OnError(ctx context.Context, collector *colly.Collector) colly
 func (w *Crawler) OnResponse(ctx context.Context) colly.ResponseCallback {
 	return func(r *colly.Response) {
 		url := r.Request.URL.String()
+
+		w.logger.Info("onresp: " + url)
 		contentType := r.Headers.Get("Content-Type")
 		contentDisposition := r.Headers.Get("Content-Disposition")
 
@@ -70,14 +74,21 @@ func (w *Crawler) OnResponse(ctx context.Context) colly.ResponseCallback {
 				contentType == "application/octet-stream") ||
 				contentType == "application/pdf"
 
-		doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(r.Body)))
-		if err != nil {
-			w.logger.Error("failed parsing HTML: " + err.Error())
-			return
+		var title string
+		var desc string
+		if r.Body != nil {
+			doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(r.Body)))
+			if err != nil {
+				w.logger.Error("failed parsing HTML: " + err.Error())
+				return
+			}
+			if doc != nil {
+				title = doc.Find("title").Text()
+				d, _ := doc.Find("meta[name=description]").Attr("content")
+				desc = d
+			}
 		}
-		title := doc.Find("title").Text()
-		metaDesc, _ := doc.Find("meta[name=description]").Attr("content")
-		searchable := strings.ToLower(title + " " + metaDesc + contentDisposition)
+		searchable := strings.ToLower(title + " " + desc + contentDisposition)
 		isContain := containsStem(searchable, w.keyword)
 
 		if isDownloadable && isContain {
@@ -89,8 +100,9 @@ func (w *Crawler) OnResponse(ctx context.Context) colly.ResponseCallback {
 		}
 		if isContain {
 			if err := w.crawlDoc.InsertOne(context.Background(), url, false, "pending"); err != nil {
-				w.logger.Info("failed insert 3: " + err.Error())
+				w.logger.Info("failed insert 2: " + err.Error())
 			}
+			w.logger.Info("match2: " + r.Request.URL.String())
 		}
 
 	}

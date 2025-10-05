@@ -80,17 +80,22 @@ func NewCrawler(
 }
 
 func (w *Crawler) Crawl(ctx context.Context, urls chan string, keyword string) error {
+	w.logger.Info("start crawl")
 	contextId := GenerateContextID()
-	ip, _ := GetPublicIP(ctx, &w.httpClient)
+	// ip, err := GetPublicIP(ctx, &w.httpClient)
+	// if err != nil {
+	// 	return err
+	// }
 	ctx = context.WithValue(ctx, ContextIDKey, contextId)
-	ctx = context.WithValue(ctx, IPKey, ip)
+	// ctx = context.WithValue(ctx, IPKey, ip)
 
 	w.logger.With(
 		zap.String(string(ContextIDKey), contextId),
-		zap.String(string(IPKey), ip),
+		// zap.String(string(IPKey), ip),
 	)
 
 	w.collector.OnHTML("a[href]", w.OnHTML(ctx))
+	w.collector.OnHTML("body", w.OnHTMLDOMLog(ctx))
 	w.collector.OnError(w.OnError(ctx, w.collector))
 	w.collector.OnResponse(w.OnResponse(ctx))
 	w.keyword = keyword
@@ -100,6 +105,7 @@ func (w *Crawler) Crawl(ctx context.Context, urls chan string, keyword string) e
 			w.logger.Error("Failed to visit URL",
 				zap.String("url", url),
 				zap.Error(err))
+			return err
 		}
 	}
 	w.collector.Wait()

@@ -58,7 +58,10 @@ func main() {
 		go func() {
 			ctx, cancel := context.WithTimeout(r.Context(), 3*time.Hour)
 			defer cancel()
-			crawler.Crawl(ctx, ch, q)
+			err := crawler.Crawl(ctx, ch, q)
+			if err != nil {
+				logger.Info("err crawl: " + err.Error())
+			}
 		}()
 
 		// err := browser.CollectUrls(ctx, q+" filetype:epub", ch)
