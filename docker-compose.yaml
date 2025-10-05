@@ -1,0 +1,83 @@
+version: '3.5'
+
+services:
+
+  axora-crawler:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: axora-crawler
+    environment:
+      APP_PORT: 8080
+      PROXY_URL: http://axora-tor-proxy:3128
+      POSTGRES_DB_URL: postgres://postgres:postgres@axora-postgres:5432/axora?sslmode=disable
+      DOWNLOAD_PATH: /app/downloads
+      DOCKER_BUILDKIT: 1
+    ports:
+      - "8080:8080"
+    networks:
+      - axora-network
+    volumes:
+      - ./downloads:/app/downloads
+    depends_on:
+      axora-postgres:
+        condition: service_healthy
+      axora-tor-proxy:
+        condition: service_started
+    deploy:
+      resources:
+        limits:
+          cpus: '3.0'
+          memory: 3G
+        reservations:
+          cpus: '1.0'
+          memory: 1G
+
+  axora-tor-proxy:
+    image: zhaowde/rotating-tor-http-proxy
+    container_name: axora-tor-proxy
+    ports:
+      - "3128:3128"
+    environment:
+      TOR_INSTANCES: 30
+      TOR_REBUILD_INTERVAL: 600
+      TOR_EXIT_COUNTRY: jp,tw,th,id,sg
+    networks:
+      - axora-network
+
+  axora-postgres:
+    image: postgres:16-alpine
+    container_name: axora-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: axora
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - axora-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  adminer:
+    image: adminer
+    container_name: axora-adminer
+    restart: unless-stopped
+    ports:
+      - "8081:8080"
+    networks:
+      - axora-network
+
+networks:
+  axora-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
