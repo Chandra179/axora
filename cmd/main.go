@@ -9,7 +9,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"axora/config"
 	"axora/crawler"
@@ -61,8 +60,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
-			defer cancel()
+			ctx := context.Background()
 			err := crawler.Crawl(ctx, ch, q)
 			if err != nil {
 				logger.Info("err crawl: " + err.Error())
@@ -72,8 +70,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
-			defer cancel()
+			ctx := context.Background()
 			browser.CollectUrls(ctx, q+" filetype:epub", ch)
 			if err != nil {
 				logger.Info("error colect urls: " + err.Error())
@@ -83,8 +80,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
-			defer cancel()
+			ctx := context.Background()
 			browser.CollectUrls(ctx, q, ch)
 			if err != nil {
 				logger.Info("error colect urls: " + err.Error())
