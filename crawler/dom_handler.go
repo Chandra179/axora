@@ -13,7 +13,6 @@ import (
 
 func (w *Crawler) OnHTML(ctx context.Context) colly.HTMLCallback {
 	return func(e *colly.HTMLElement) {
-		w.logger.Info("onhtml: " + e.Request.ProxyURL)
 		href := e.Attr("href")
 		absoluteURL := e.Request.AbsoluteURL(href)
 

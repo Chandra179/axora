@@ -51,12 +51,12 @@ func main() {
 			return
 		}
 
-		libgenUrl := "https://libgen.li/index.php?req=" + q
+		libgenUrl := "https://libgen.vg/index.php?req=" + q
 		ch := make(chan string, 500)
 		ch <- libgenUrl
 
 		go func() {
-			ctx, cancel := context.WithTimeout(r.Context(), 3*time.Hour)
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
 			defer cancel()
 			err := crawler.Crawl(ctx, ch, q)
 			if err != nil {
