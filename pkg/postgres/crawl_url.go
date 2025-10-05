@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"axora/crawler"
 	"context"
 	"fmt"
 
@@ -71,4 +72,36 @@ func (c *PostgresClient) UpdateDownloadStatus(ctx context.Context, id string, st
 	}
 
 	return nil
+}
+
+func (c *PostgresClient) GetDownloadableUrls(ctx context.Context) ([]crawler.DownloadableURL, error) {
+	query := `
+		SELECT id, url
+		FROM crawl_url
+		WHERE is_downloadable = true
+		AND download_status = 'pending'
+		ORDER BY id
+		LIMIT 100
+	`
+
+	rows, err := c.pool.Query(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("unable to query downloadable URLs: %w", err)
+	}
+	defer rows.Close()
+
+	var urls []crawler.DownloadableURL
+	for rows.Next() {
+		var url crawler.DownloadableURL
+		if err := rows.Scan(&url.ID, &url.URL); err != nil {
+			return nil, fmt.Errorf("unable to scan row: %w", err)
+		}
+		urls = append(urls, url)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	return urls, nil
 }

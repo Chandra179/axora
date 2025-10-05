@@ -10,6 +10,7 @@ type Config struct {
 	AppPort       int
 	ProxyURL      string
 	PostgresDBUrl string
+	DownloadPath  string
 }
 
 func Load() (*Config, error) {
@@ -21,6 +22,7 @@ func Load() (*Config, error) {
 	return &Config{
 		AppPort:       appPort,
 		ProxyURL:      getEnv("PROXY_URL"),
+		DownloadPath:  getEnv("DOWNLOAD_PATH"),
 		PostgresDBUrl: getEnv("POSTGRES_DB_URL"),
 	}, nil
 }

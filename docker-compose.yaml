@@ -11,11 +11,14 @@ services:
       APP_PORT: 8080
       PROXY_URL: http://axora-tor-proxy:3128
       POSTGRES_DB_URL: postgres://postgres:postgres@axora-postgres:5432/axora?sslmode=disable
+      DOWNLOAD_PATH: /app/downloads
       DOCKER_BUILDKIT: 1
     ports:
       - "8080:8080"
     networks:
       - axora-network
+    volumes:
+      - ./downloads:/app/downloads
     depends_on:
       axora-postgres:
         condition: service_healthy
@@ -24,11 +27,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '1.5'
-          memory: 2G
+          cpus: '3.0'
+          memory: 3G
         reservations:
-          cpus: '0.5'
-          memory: 512M
+          cpus: '1.0'
+          memory: 1G
 
   axora-tor-proxy:
     image: zhaowde/rotating-tor-http-proxy

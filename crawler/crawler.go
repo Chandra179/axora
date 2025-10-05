@@ -62,8 +62,8 @@ func NewCrawler(
 	c.SetRequestTimeout(180 * time.Minute)
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 100,
-		Delay:       3 * time.Second,
+		Parallelism: 15,
+		Delay:       10 * time.Second,
 	})
 	c.IgnoreRobotsTxt = true
 
@@ -80,9 +80,7 @@ func NewCrawler(
 }
 
 func (w *Crawler) Crawl(ctx context.Context, urls chan string, keyword string) error {
-	w.logger.Info("start crawl")
 	contextId := GenerateContextID()
-
 	ctx = context.WithValue(ctx, ContextIDKey, contextId)
 	w.logger.With(
 		zap.String(string(ContextIDKey), contextId),

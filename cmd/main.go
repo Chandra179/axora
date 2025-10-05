@@ -2,13 +2,15 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 
 	"axora/config"
 	"axora/crawler"
@@ -26,6 +28,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to create logger: %v", err)
 	}
+	defer logger.Sync()
 
 	browser := crawler.NewBrowser(logger, cfg.ProxyURL)
 	httpClient, httpTransport := NewHttpClient(cfg.ProxyURL)
@@ -33,7 +36,8 @@ func main() {
 	if err != nil {
 		logger.Fatal("failed to create postgres client", zap.Error(err))
 	}
-	crawler, err := crawler.NewCrawler(
+
+	crawlerInstance, err := crawler.NewCrawler(
 		cfg.ProxyURL,
 		httpClient,
 		httpTransport,
@@ -44,6 +48,15 @@ func main() {
 		logger.Fatal("failed to create crawler", zap.Error(err))
 	}
 
+	downloadManager, err := crawler.NewDownloadManager(cfg.DownloadPath, pg, logger, httpClient)
+	if err != nil {
+		logger.Fatal("failed to create download manager", zap.Error(err))
+	}
+
+	if err := downloadManager.Start(); err != nil {
+		logger.Fatal("failed to start download manager", zap.Error(err))
+	}
+
 	h := func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query().Get("q")
 		if strings.TrimSpace(q) == "" {
@@ -51,9 +64,7 @@ func main() {
 			return
 		}
 
-		libgenUrl := "https://libgen.vg/index.php?req=" + q
-		ch := make(chan string, 500)
-		ch <- libgenUrl
+		ch := make(chan string)
 
 		var wg sync.WaitGroup
 
@@ -61,21 +72,13 @@ func main() {
 		go func() {
 			defer wg.Done()
 			ctx := context.Background()
-			err := crawler.Crawl(ctx, ch, q)
+			err := crawlerInstance.Crawl(ctx, ch, q)
 			if err != nil {
 				logger.Info("err crawl: " + err.Error())
 			}
 		}()
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			ctx := context.Background()
-			browser.CollectUrls(ctx, q+" filetype:epub", ch)
-			if err != nil {
-				logger.Info("error colect urls: " + err.Error())
-			}
-		}()
+		ch <- "https://libgen.vg/index.php?req=" + q
 
 		wg.Add(1)
 		go func() {
@@ -96,10 +99,28 @@ func main() {
 		_, _ = w.Write([]byte("Crawl started"))
 	}
 
-	fmt.Println("Running")
 	http.HandleFunc("/scrap", h)
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil))
 
+	serverErrors := make(chan error, 1)
+	go func() {
+		logger.Info("starting server", zap.Int("port", cfg.AppPort))
+		serverErrors <- http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil)
+	}()
+
+	shutdown := make(chan os.Signal, 1)
+	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
+
+	select {
+	case err := <-serverErrors:
+		logger.Fatal("server error", zap.Error(err))
+
+	case sig := <-shutdown:
+		logger.Info("shutdown signal received", zap.String("signal", sig.String()))
+
+		downloadManager.Stop()
+
+		logger.Info("shutdown complete")
+	}
 }
 
 func NewHttpClient(proxyUrl string) (*http.Client, *http.Transport) {

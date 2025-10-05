@@ -25,3 +25,7 @@ vendor
 go.sum
 .env
 env
+/downloads
+*.cbr
+*.pdf
+*.epub

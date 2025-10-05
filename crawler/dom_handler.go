@@ -16,46 +16,7 @@ func (w *Crawler) OnHTML(ctx context.Context) colly.HTMLCallback {
 		href := e.Attr("href")
 		absoluteURL := e.Request.AbsoluteURL(href)
 
-		ip, err := GetPublicIP(ctx, &w.httpClient)
-		if err != nil {
-			w.logger.Info("err checking ip: " + err.Error())
-			return
-		}
-		w.logger.Info("ip: " + ip + ", url: " + absoluteURL)
-
 		e.Request.Visit(absoluteURL)
-	}
-}
-
-func (w *Crawler) OnHTMLDOMLog(ctx context.Context) colly.HTMLCallback {
-	return func(e *colly.HTMLElement) {
-		url := e.Request.URL.String()
-
-		var links []string
-		var bookLinks []string
-
-		e.ForEach("a[href]", func(i int, link *colly.HTMLElement) {
-			href := link.Attr("href")
-			text := strings.TrimSpace(link.Text)
-			if text == "" {
-				text = "[no text]"
-			}
-			absoluteURL := e.Request.AbsoluteURL(href)
-			links = append(links, absoluteURL+" ("+text+")")
-
-			// Specifically look for book-related links
-			if strings.Contains(href, "/file.php?id=") ||
-				strings.Contains(href, "/ads.php?md5=") ||
-				strings.Contains(href, "edition.php?id=") {
-				bookLinks = append(bookLinks, absoluteURL+" ("+text+")")
-			}
-		})
-
-		w.logger.Info("HTML DOM Structure",
-			zap.String("url", url),
-			zap.Int("links_count", len(links)),
-			zap.Int("book_links_count", len(bookLinks)),
-			zap.Strings("book_links", bookLinks))
 	}
 }
 
@@ -71,7 +32,6 @@ func (w *Crawler) OnResponse(ctx context.Context) colly.ResponseCallback {
 	return func(r *colly.Response) {
 		url := r.Request.URL.String()
 
-		w.logger.Info("onresp: " + url)
 		contentType := r.Headers.Get("Content-Type")
 		contentDisposition := r.Headers.Get("Content-Disposition")
 
@@ -124,4 +84,36 @@ func containsStem(text, keyword string) bool {
 		}
 	}
 	return false
+}
+
+func (w *Crawler) OnHTMLDOMLog(ctx context.Context) colly.HTMLCallback {
+	return func(e *colly.HTMLElement) {
+		url := e.Request.URL.String()
+
+		var links []string
+		var bookLinks []string
+
+		e.ForEach("a[href]", func(i int, link *colly.HTMLElement) {
+			href := link.Attr("href")
+			text := strings.TrimSpace(link.Text)
+			if text == "" {
+				text = "[no text]"
+			}
+			absoluteURL := e.Request.AbsoluteURL(href)
+			links = append(links, absoluteURL+" ("+text+")")
+
+			// Specifically look for book-related links
+			if strings.Contains(href, "/file.php?id=") ||
+				strings.Contains(href, "/ads.php?md5=") ||
+				strings.Contains(href, "edition.php?id=") {
+				bookLinks = append(bookLinks, absoluteURL+" ("+text+")")
+			}
+		})
+
+		w.logger.Info("HTML DOM Structure",
+			zap.String("url", url),
+			zap.Int("links_count", len(links)),
+			zap.Int("book_links_count", len(bookLinks)),
+			zap.Strings("book_links", bookLinks))
+	}
 }

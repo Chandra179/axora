@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/PuerkitoBio/goquery v1.10.3
+	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327
 	github.com/chromedp/chromedp v0.14.1
 	github.com/gocolly/colly/v2 v2.2.0
@@ -11,6 +12,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.6
 	github.com/kljensen/snowball v0.10.0
+	github.com/robfig/cron/v3 v3.0.1
 	go.uber.org/zap v1.27.0
 )
 
