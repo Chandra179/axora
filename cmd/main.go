@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"axora/config"
@@ -27,7 +28,7 @@ func main() {
 		log.Fatalf("failed to create logger: %v", err)
 	}
 
-	// browser := crawler.NewBrowser(logger, cfg.ProxyURL)
+	browser := crawler.NewBrowser(logger, cfg.ProxyURL)
 	httpClient, httpTransport := NewHttpClient(cfg.ProxyURL)
 	pg, err := postgres.NewClient(cfg.PostgresDBUrl)
 	if err != nil {
@@ -55,7 +56,11 @@ func main() {
 		ch := make(chan string, 500)
 		ch <- libgenUrl
 
+		var wg sync.WaitGroup
+
+		wg.Add(1)
 		go func() {
+			defer wg.Done()
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
 			defer cancel()
 			err := crawler.Crawl(ctx, ch, q)
@@ -64,12 +69,33 @@ func main() {
 			}
 		}()
 
-		// err := browser.CollectUrls(ctx, q+" filetype:epub", ch)
-		// if err != nil {
-		// 	fmt.Println("HAHAHA")
-		// }
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
+			defer cancel()
+			browser.CollectUrls(ctx, q+" filetype:epub", ch)
+			if err != nil {
+				logger.Info("error colect urls: " + err.Error())
+			}
+		}()
 
-		close(ch)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
+			defer cancel()
+			browser.CollectUrls(ctx, q, ch)
+			if err != nil {
+				logger.Info("error colect urls: " + err.Error())
+			}
+		}()
+
+		go func() {
+			wg.Wait()
+			close(ch)
+		}()
+
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Crawl started"))
 	}

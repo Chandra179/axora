@@ -1,7 +1,11 @@
-# Axora
-Collect data by keywords
+# Axora (Crawl & Scrape)
+Collect data by keywords: `GET http://localhost:8080/scrap?q=economy`
 
-## Crawl & Scrape
-1. find every a[href] in the page
-2. Data provider: libgen, brave, startpage
-3. IP rotation using TOR
+conccurent web crawling system designed for concurrent, privacy-focused content collection and processing. The system leverages Tor network for anonymous crawling
+
+![HighLevelDiagram](img/axora.png)
+
+
+## Test
+![HighLevelDiagram](img/test.png)
+

@@ -16,6 +16,13 @@ func (w *Crawler) OnHTML(ctx context.Context) colly.HTMLCallback {
 		href := e.Attr("href")
 		absoluteURL := e.Request.AbsoluteURL(href)
 
+		ip, err := GetPublicIP(ctx, &w.httpClient)
+		if err != nil {
+			w.logger.Info("err checking ip: " + err.Error())
+			return
+		}
+		w.logger.Info("ip: " + ip + ", url: " + absoluteURL)
+
 		e.Request.Visit(absoluteURL)
 	}
 }

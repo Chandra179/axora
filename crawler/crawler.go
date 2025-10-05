@@ -62,7 +62,7 @@ func NewCrawler(
 	c.SetRequestTimeout(180 * time.Minute)
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 50,
+		Parallelism: 100,
 		Delay:       3 * time.Second,
 	})
 	c.IgnoreRobotsTxt = true
@@ -83,16 +83,9 @@ func (w *Crawler) Crawl(ctx context.Context, urls chan string, keyword string) e
 	w.logger.Info("start crawl")
 	contextId := GenerateContextID()
 
-	ip, err := GetPublicIP(ctx, &w.httpClient)
-	if err != nil {
-		return err
-	}
 	ctx = context.WithValue(ctx, ContextIDKey, contextId)
-	ctx = context.WithValue(ctx, IPKey, ip)
-
 	w.logger.With(
 		zap.String(string(ContextIDKey), contextId),
-		zap.String(string(IPKey), ip),
 	)
 
 	w.collector.OnHTML("a[href]", w.OnHTML(ctx))
