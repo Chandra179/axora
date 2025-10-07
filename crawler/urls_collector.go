@@ -50,8 +50,6 @@ func NewBrowser(logger *zap.Logger, proxyURL string) *Browser {
 			chromedp.NoSandbox,
 			chromedp.Headless,
 			chromedp.UserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
-
-			// Your existing stealth options
 			chromedp.Flag("accept-language", "en-US,en;q=0.9"),
 			chromedp.Flag("accept-encoding", "gzip, deflate, br"),
 			chromedp.Flag("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8"),
@@ -95,28 +93,23 @@ func (b *Browser) CollectUrls(ctx context.Context, query string, collectedUrls c
 			return err
 		}
 
-		urls, err := b.extractLinksFromCurrentPage(taskCtx, engine)
+		urlCount, err := b.extractLinksFromCurrentPage(taskCtx, engine, collectedUrls)
 		if err != nil {
 			b.logger.Error("Failed to extract links from page",
 				zap.Error(err),
 				zap.Int("page", b.currentPage))
 			return err
-		} else {
-			for _, link := range urls {
-				collectedUrls <- link["href"]
-			}
-			b.logger.Info("Collected URLs from page",
-				zap.Int("page", b.currentPage),
-				zap.Int("urls_this_page", len(urls)),
-			)
 		}
+
+		b.logger.Info("Collected URLs from page",
+			zap.Int("page", b.currentPage),
+			zap.Int("urls_this_page", urlCount),
+		)
 
 		if b.currentPage >= b.maxPages {
 			b.logger.Info("Reached maximum pages", zap.Int("max_pages", b.maxPages))
 			break
 		}
-
-		// b.logDOMBeforeNextPage(taskCtx, engine)
 
 		hasNext, err := b.goToNextPage(taskCtx, engine)
 		if err != nil {
@@ -132,12 +125,11 @@ func (b *Browser) CollectUrls(ctx context.Context, query string, collectedUrls c
 		}
 
 		if b.pageDelay > 0 {
-			b.logger.Debug("Waiting between pages", zap.Duration("delay", b.pageDelay))
 			time.Sleep(b.pageDelay)
 		}
 	}
 
-	b.logger.Info("Crawling completed",
+	b.logger.Info("Collect Urls completed",
 		zap.Int("total_pages", b.currentPage),
 		zap.String("engine", engine.Name))
 
@@ -199,7 +191,7 @@ func (b *Browser) checkPageState(ctx context.Context) error {
 		return fmt.Errorf("failed to get page state: %w", err)
 	}
 
-	b.logger.Info("Page state",
+	b.logger.Debug("Page state",
 		zap.String("url", currentURL),
 		zap.String("title", title),
 		zap.String("ready_state", readyState),
@@ -212,47 +204,49 @@ func (b *Browser) checkPageState(ctx context.Context) error {
 	return nil
 }
 
-func (b *Browser) extractLinksFromCurrentPage(ctx context.Context, engine SearchEngine) ([]map[string]string, error) {
-	var rawLinks []map[string]string
-
+// Optimized version that streams URLs directly to channel
+func (b *Browser) extractLinksFromCurrentPage(ctx context.Context, engine SearchEngine, collectedUrls chan string) (int, error) {
+	// Efficient script that only returns unique href strings
 	script := fmt.Sprintf(`
-		let resultsDiv = document.querySelector('%s');
-		let links = [];
-		
-		if (resultsDiv) {
-			links = Array.from(resultsDiv.querySelectorAll('a[href]')).map(link => ({
-				href: link.href,
-				text: link.textContent.trim()
-			}));
-		}
-		
-		// Fallback to all links if no results div found
-		if (links.length === 0) {
-			links = Array.from(document.querySelectorAll('a[href]')).map(link => ({
-				href: link.href,
-				text: link.textContent.trim()
-			}));
-		}
-		
-		links = links.filter(link => 
-			link.href &&
-			!link.href.startsWith('javascript:') &&
-			link.href.startsWith('https') &&
-			link.text.length > 0
-		);
-
-		// Deduplicate by href
-		links = Array.from(new Map(links.map(link => [link.href, link])).values());
-
-		links;
+		(function() {
+			const resultsDiv = document.querySelector('%s');
+			const anchors = resultsDiv ? 
+				resultsDiv.querySelectorAll('a[href]') : 
+				document.querySelectorAll('a[href]');
+			
+			const urls = new Set();
+			
+			for (const link of anchors) {
+				const href = link.href;
+				if (href && 
+					href.startsWith('https') && 
+					!href.startsWith('javascript:') &&
+					link.textContent.trim().length > 0) {
+					urls.add(href);
+				}
+			}
+			
+			return Array.from(urls);
+		})();
 	`, engine.ResultSelector)
 
-	err := chromedp.Run(ctx, chromedp.Evaluate(script, &rawLinks))
+	var urls []string
+	err := chromedp.Run(ctx, chromedp.Evaluate(script, &urls))
 	if err != nil {
-		return nil, fmt.Errorf("failed to extract links: %w", err)
+		return 0, fmt.Errorf("failed to extract links: %w", err)
 	}
 
-	return rawLinks, nil
+	count := 0
+	for _, href := range urls {
+		select {
+		case collectedUrls <- href:
+			count++
+		case <-ctx.Done():
+			return count, ctx.Err()
+		}
+	}
+
+	return count, nil
 }
 
 func (b *Browser) goToNextPage(ctx context.Context, engine SearchEngine) (bool, error) {
@@ -261,8 +255,6 @@ func (b *Browser) goToNextPage(ctx context.Context, engine SearchEngine) (bool, 
 		chromedp.Nodes(engine.NextPageSelector, &nodes, chromedp.ByQuery),
 	)
 	if err != nil || len(nodes) == 0 {
-		b.logger.Info("Next page button not found (probably last page)",
-			zap.String("selector", engine.NextPageSelector))
 		return false, nil
 	}
 
@@ -270,11 +262,10 @@ func (b *Browser) goToNextPage(ctx context.Context, engine SearchEngine) (bool, 
 		chromedp.WaitVisible(engine.NextPageSelector, chromedp.ByQuery),
 	)
 	if err != nil {
-		b.logger.Info("Next page button exists but not visible", zap.Error(err))
 		return false, nil
 	}
 
-	b.logger.Info("Clicking next page button", zap.String("selector", engine.NextPageSelector))
+	b.logger.Debug("Clicking next page button", zap.String("selector", engine.NextPageSelector))
 
 	err = chromedp.Run(ctx,
 		chromedp.Click(engine.NextPageSelector, chromedp.ByQuery),
@@ -282,34 +273,8 @@ func (b *Browser) goToNextPage(ctx context.Context, engine SearchEngine) (bool, 
 		chromedp.WaitReady("body"),
 	)
 	if err != nil {
-		b.logger.Info("Failed to click next page button", zap.Error(err))
 		return false, err
 	}
 
 	return true, nil
-}
-
-func (b *Browser) logDOMBeforeNextPage(ctx context.Context, engine SearchEngine) {
-	var domHTML, currentURL string
-
-	err := chromedp.Run(ctx,
-		chromedp.Location(&currentURL),
-		chromedp.OuterHTML("html", &domHTML),
-	)
-
-	if err != nil {
-		b.logger.Warn("Failed to get DOM for logging", zap.Error(err))
-		return
-	}
-
-	b.logger.Info("DOM state before next page",
-		zap.Int("current_page", b.currentPage),
-		zap.String("current_url", currentURL),
-		zap.Int("dom_length", len(domHTML)),
-		zap.String("dom", domHTML),
-		zap.String("next_selector", engine.NextPageSelector))
-
-	b.logger.Debug("DOM snippet before pagination",
-		zap.Int("page", b.currentPage),
-		zap.String("dom_snippet", domHTML[:200]+"..."))
 }
