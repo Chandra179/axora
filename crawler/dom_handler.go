@@ -42,6 +42,7 @@ func (w *Crawler) OnResponse(ctx context.Context) colly.ResponseCallback {
 
 		var title string
 		var desc string
+		var docs *goquery.Document
 		if r.Body != nil {
 			doc, err := goquery.NewDocumentFromReader(strings.NewReader(string(r.Body)))
 			if err != nil {
@@ -53,18 +54,19 @@ func (w *Crawler) OnResponse(ctx context.Context) colly.ResponseCallback {
 				d, _ := doc.Find("meta[name=description]").Attr("content")
 				desc = d
 			}
+			docs = doc
 		}
 		searchable := strings.ToLower(title + " " + desc + contentDisposition)
 		isContain := containsStem(searchable, w.keyword)
 
-		if isDownloadable && isContain {
+		if isDownloadable {
 			if err := w.crawlDoc.InsertOne(context.Background(), url, true, "pending"); err != nil {
 				w.logger.Info("failed insert 1: " + err.Error())
 			}
 			w.logger.Info("match1: " + r.Request.URL.String())
 			return
 		}
-		if isContain {
+		if isContain && docs != nil && IsContentRelevant(docs) {
 			if err := w.crawlDoc.InsertOne(context.Background(), url, false, "pending"); err != nil {
 				w.logger.Info("failed insert 2: " + err.Error())
 			}
