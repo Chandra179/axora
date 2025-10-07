@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"sync"
 	"time"
 
 	"github.com/chromedp/cdproto/cdp"
@@ -104,7 +103,7 @@ func (b *Browser) CollectUrls(ctx context.Context, query string, collectedUrls c
 			return err
 		} else {
 			for _, link := range urls {
-				collectedUrls <- link
+				collectedUrls <- link["href"]
 			}
 			b.logger.Info("Collected URLs from page",
 				zap.Int("page", b.currentPage),
@@ -213,7 +212,7 @@ func (b *Browser) checkPageState(ctx context.Context) error {
 	return nil
 }
 
-func (b *Browser) extractLinksFromCurrentPage(ctx context.Context, engine SearchEngine) ([]string, error) {
+func (b *Browser) extractLinksFromCurrentPage(ctx context.Context, engine SearchEngine) ([]map[string]string, error) {
 	var rawLinks []map[string]string
 
 	script := fmt.Sprintf(`
@@ -253,26 +252,7 @@ func (b *Browser) extractLinksFromCurrentPage(ctx context.Context, engine Search
 		return nil, fmt.Errorf("failed to extract links: %w", err)
 	}
 
-	var results []string
-	resultsCh := make(chan string, len(rawLinks))
-
-	var wg sync.WaitGroup
-	for _, link := range rawLinks {
-		wg.Add(1)
-		go func(l map[string]string) {
-			defer wg.Done()
-			resultsCh <- l["href"]
-		}(link)
-	}
-
-	wg.Wait()
-	close(resultsCh)
-
-	for href := range resultsCh {
-		results = append(results, href)
-	}
-
-	return results, nil
+	return rawLinks, nil
 }
 
 func (b *Browser) goToNextPage(ctx context.Context, engine SearchEngine) (bool, error) {

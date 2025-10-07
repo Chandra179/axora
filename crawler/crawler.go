@@ -87,7 +87,7 @@ func (w *Crawler) Crawl(ctx context.Context, urls chan string, keyword string) e
 	)
 
 	w.collector.OnHTML("a[href]", w.OnHTML(ctx))
-	// w.collector.OnHTML("body", w.OnHTMLDOMLog(ctx))
+	w.collector.OnHTML("body", w.OnHTMLDOMLog(ctx))
 	w.collector.OnError(w.OnError(ctx, w.collector))
 	w.collector.OnResponse(w.OnResponse(ctx))
 	w.keyword = keyword

@@ -78,7 +78,7 @@ func main() {
 			}
 		}()
 
-		ch <- "https://libgen.vg/index.php?req=" + q
+		// ch <- "https://libgen.vg/index.php?req=" + q
 
 		wg.Add(1)
 		go func() {
