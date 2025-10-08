@@ -34,15 +34,13 @@ const (
 )
 
 type Crawler struct {
-	collector     *colly.Collector
-	logger        *zap.Logger
-	httpClient    http.Client
-	proxyUrl      string
-	keyword       string
-	crawlDoc      CrawlDocClient
-	crawlEvent    CrawlEvent
-	hostBlacklist map[string]struct{}
-	pathBlacklist []string
+	collector  *colly.Collector
+	logger     *zap.Logger
+	httpClient http.Client
+	proxyUrl   string
+	keyword    string
+	crawlDoc   CrawlDocClient
+	crawlEvent CrawlEvent
 }
 
 func NewCrawler(
@@ -52,6 +50,7 @@ func NewCrawler(
 	logger *zap.Logger,
 	crawlDoc CrawlDocClient,
 	crawlEvent CrawlEvent,
+	domains []string,
 ) (*Crawler, error) {
 	c := colly.NewCollector(
 		colly.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "+
@@ -60,6 +59,7 @@ func NewCrawler(
 		colly.Async(true),
 		colly.TraceHTTP(),
 		colly.ParseHTTPErrorResponse(),
+		colly.AllowedDomains(domains...),
 		colly.URLFilters(
 			regexp.MustCompile(`^https://.*$`),
 			regexp.MustCompile(`^https://libgen\.li/index\.php\?req=[^&]+$`),
@@ -89,11 +89,6 @@ func NewCrawler(
 		proxyUrl:   proxyUrl,
 		crawlDoc:   crawlDoc,
 		crawlEvent: crawlEvent,
-		hostBlacklist: map[string]struct{}{
-			"startpage": {},
-			"brave":     {},
-		},
-		pathBlacklist: []string{"/about", "/help"},
 	}
 
 	return worker, nil

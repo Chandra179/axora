@@ -25,13 +25,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	domains := config.LoadDomains("/app/domains.yaml")
 	logger, err := zap.NewProduction()
 	if err != nil {
 		log.Fatalf("failed to create logger: %v", err)
 	}
 	defer logger.Sync()
 
-	browser := crawler.NewBrowser(logger, cfg.ProxyURL)
+	// browser := crawler.NewBrowser(logger, cfg.ProxyURL)
 	httpClient, httpTransport := NewHttpClient(cfg.ProxyURL)
 	pg, err := postgres.NewClient(cfg.PostgresDBUrl)
 	if err != nil {
@@ -49,6 +50,7 @@ func main() {
 		logger,
 		pg,
 		kafkaClient,
+		domains,
 	)
 	if err != nil {
 		logger.Fatal("failed to create crawler", zap.Error(err))
@@ -71,7 +73,6 @@ func main() {
 		}
 
 		ch := make(chan string)
-
 		var wg sync.WaitGroup
 
 		wg.Add(1)
@@ -88,10 +89,15 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			browser.CollectUrls(q, ch)
-			if err != nil {
-				logger.Info("error colect urls: " + err.Error())
+			for _, d := range domains {
+				url := "https://" + d
+				ch <- url
 			}
+
+			// browser.CollectUrls(q, ch)
+			// if err != nil {
+			// 	logger.Info("error colect urls: " + err.Error())
+			// }
 		}()
 
 		go func() {
