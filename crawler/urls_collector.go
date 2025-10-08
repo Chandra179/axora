@@ -197,10 +197,6 @@ func (b *Browser) checkPageState(ctx context.Context) error {
 		zap.String("ready_state", readyState),
 		zap.Int("page", b.currentPage))
 
-	if title == "Access Denied" || title == "Blocked" {
-		return fmt.Errorf("page access blocked: %s", title)
-	}
-
 	return nil
 }
 

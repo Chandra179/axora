@@ -56,7 +56,7 @@ func NewCrawler(
 	c := colly.NewCollector(
 		colly.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "+
 			"(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
-		// colly.MaxDepth(1),
+		colly.MaxDepth(2),
 		colly.Async(true),
 		colly.TraceHTTP(),
 		colly.ParseHTTPErrorResponse(),
@@ -73,11 +73,12 @@ func NewCrawler(
 
 	c.WithTransport(httpTransport)
 	c.SetClient(httpClient)
-	c.SetRequestTimeout(30 * time.Second)
+	c.SetRequestTimeout(5 * time.Minute)
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
 		Parallelism: 30,
 		Delay:       3 * time.Second,
+		RandomDelay: 3 * time.Second,
 	})
 	c.IgnoreRobotsTxt = true
 

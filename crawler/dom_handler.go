@@ -10,17 +10,17 @@ import (
 
 func (w *Crawler) OnHTML() colly.HTMLCallback {
 	return func(e *colly.HTMLElement) {
-		// href := e.Attr("href")
-		// absoluteURL := e.Request.AbsoluteURL(href)
+		href := e.Attr("href")
+		absoluteURL := e.Request.AbsoluteURL(href)
 
-		// e.Request.Visit(absoluteURL)
+		e.Request.Visit(absoluteURL)
 	}
 }
 
 func (w *Crawler) OnError(collector *colly.Collector) colly.ErrorCallback {
 	return func(r *colly.Response, err error) {
 		w.logger.Info("onerror: " + err.Error())
-		r.Request.Retry()
+		// r.Request.Retry()
 	}
 }
 

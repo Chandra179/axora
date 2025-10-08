@@ -130,12 +130,17 @@ func main() {
 func NewHttpClient(proxyUrl string) (*http.Client, *http.Transport) {
 	proxyURL, _ := url.Parse(proxyUrl)
 	transport := &http.Transport{
-		Proxy:               http.ProxyURL(proxyURL),
-		IdleConnTimeout:     30 * time.Second,
-		MaxIdleConns:        100,
-		MaxIdleConnsPerHost: 10,
-		// DisableKeepAlives: true,
+		Proxy:                 http.ProxyURL(proxyURL),
+		IdleConnTimeout:       90 * time.Second,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		ResponseHeaderTimeout: 120 * time.Second,
 	}
-	client := &http.Client{Transport: transport}
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   5 * time.Minute,
+	}
+
 	return client, transport
 }
