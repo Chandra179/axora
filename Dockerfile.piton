@@ -1,0 +1,23 @@
+# Use latest official Python slim image
+FROM python:3.13-slim
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies (optional, useful for psycopg2, lxml, etc.)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements first for caching
+COPY requirements.txt .
+
+# Install Python dependencies
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY . .
+
+# Run your app (adjust if needed, e.g., main.py or uvicorn for FastAPI)
+CMD ["python", "main.py"]

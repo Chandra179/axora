@@ -37,6 +37,23 @@ services:
           cpus: '1.0'
           memory: 1G
 
+  axora-extractor:
+    build:
+      context: .
+      dockerfile: Dockerfile.piton
+    container_name: axora-extractor
+    environment:
+      KAFKA_URL: axora-kafka:9092
+    depends_on:
+      axora-kafka:
+        condition: service_healthy
+      axora-postgres:
+        condition: service_healthy
+    networks:
+      - axora-network
+    volumes:
+      - ./extractor:/app
+
   axora-tor-proxy:
     image: zhaowde/rotating-tor-http-proxy
     container_name: axora-tor-proxy
