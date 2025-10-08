@@ -34,16 +34,15 @@ const (
 )
 
 type Crawler struct {
-	collector       *colly.Collector
-	logger          *zap.Logger
-	httpClient      http.Client
-	proxyUrl        string
-	IpRotationDelay time.Duration
-	keyword         string
-	crawlDoc        CrawlDocClient
-	crawlEvent      CrawlEvent
-	hostBlacklist   map[string]struct{}
-	pathBlacklist   []string
+	collector     *colly.Collector
+	logger        *zap.Logger
+	httpClient    http.Client
+	proxyUrl      string
+	keyword       string
+	crawlDoc      CrawlDocClient
+	crawlEvent    CrawlEvent
+	hostBlacklist map[string]struct{}
+	pathBlacklist []string
 }
 
 func NewCrawler(
@@ -83,13 +82,12 @@ func NewCrawler(
 	c.IgnoreRobotsTxt = true
 
 	worker := &Crawler{
-		collector:       c,
-		logger:          logger,
-		httpClient:      *httpClient,
-		proxyUrl:        proxyUrl,
-		IpRotationDelay: 40 * time.Second,
-		crawlDoc:        crawlDoc,
-		crawlEvent:      crawlEvent,
+		collector:  c,
+		logger:     logger,
+		httpClient: *httpClient,
+		proxyUrl:   proxyUrl,
+		crawlDoc:   crawlDoc,
+		crawlEvent: crawlEvent,
 		hostBlacklist: map[string]struct{}{
 			"startpage": {},
 			"brave":     {},

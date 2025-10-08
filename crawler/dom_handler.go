@@ -3,7 +3,6 @@ package crawler
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/gocolly/colly/v2"
 	"go.uber.org/zap"
@@ -21,7 +20,6 @@ func (w *Crawler) OnHTML() colly.HTMLCallback {
 func (w *Crawler) OnError(collector *colly.Collector) colly.ErrorCallback {
 	return func(r *colly.Response, err error) {
 		w.logger.Info("onerror: " + err.Error())
-		time.Sleep(w.IpRotationDelay)
 		r.Request.Retry()
 	}
 }
