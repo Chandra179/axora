@@ -13,6 +13,7 @@ services:
       POSTGRES_DB_URL: postgres://postgres:postgres@axora-postgres:5432/axora?sslmode=disable
       DOWNLOAD_PATH: /app/downloads
       DOCKER_BUILDKIT: 1
+      KAFKA_URL: axora-kafka:9092
     ports:
       - "8080:8080"
     networks:
@@ -24,6 +25,8 @@ services:
         condition: service_healthy
       axora-tor-proxy:
         condition: service_started
+      axora-kafka:
+        condition: service_healthy
     deploy:
       resources:
         limits:
@@ -39,7 +42,7 @@ services:
     ports:
       - "3128:3128"
     environment:
-      TOR_INSTANCES: 30
+      TOR_INSTANCES: 10
       TOR_REBUILD_INTERVAL: 600
       TOR_EXIT_COUNTRY: jp,tw,th,id,sg
     networks:
@@ -66,6 +69,62 @@ services:
       retries: 5
     restart: unless-stopped
 
+  axora-kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: axora-kafka
+    ports:
+      - "9092:9092"
+      - "9094:9094"
+    environment:
+      # KRaft mode (no Zookeeper needed)
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://axora-kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@axora-kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # Additional settings
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_SEGMENT_BYTES: 1073741824
+      KAFKA_NUM_PARTITIONS: 3
+      KAFKA_DEFAULT_REPLICATION_FACTOR: 1
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+      CLUSTER_ID: MkU3OEVBNTcwNTJENDM2Qk
+    volumes:
+      - kafka_data:/var/lib/kafka/data
+    networks:
+      - axora-network
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:9092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: axora-kafka-ui
+    ports:
+      - "8082:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: axora-cluster
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: axora-kafka:9092
+      DYNAMIC_CONFIG_ENABLED: "true"
+      KAFKA_CLUSTERS_0_METRICS_PORT: 9997
+    networks:
+      - axora-network
+    depends_on:
+      axora-kafka:
+        condition: service_healthy
+    restart: unless-stopped
+
   adminer:
     image: adminer
     container_name: axora-adminer
@@ -81,3 +140,4 @@ networks:
 
 volumes:
   postgres_data:
+  kafka_data:

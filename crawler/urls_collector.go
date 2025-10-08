@@ -64,10 +64,10 @@ func NewBrowser(logger *zap.Logger, proxyURL string) *Browser {
 	}
 }
 
-func (b *Browser) CollectUrls(ctx context.Context, query string, collectedUrls chan string) error {
+func (b *Browser) CollectUrls(query string, collectedUrls chan string) error {
 	engine := b.SupportedEngines[1]
 
-	taskCtx, cancel, err := b.setupBrowserContext(ctx, time.Minute*5)
+	taskCtx, cancel, err := b.setupBrowserContext(context.Background(), time.Hour*3)
 	if err != nil {
 		return fmt.Errorf("failed to setup browser context: %w", err)
 	}

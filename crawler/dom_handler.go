@@ -9,16 +9,16 @@ import (
 	"go.uber.org/zap"
 )
 
-func (w *Crawler) OnHTML(ctx context.Context) colly.HTMLCallback {
+func (w *Crawler) OnHTML() colly.HTMLCallback {
 	return func(e *colly.HTMLElement) {
-		href := e.Attr("href")
-		absoluteURL := e.Request.AbsoluteURL(href)
+		// href := e.Attr("href")
+		// absoluteURL := e.Request.AbsoluteURL(href)
 
-		e.Request.Visit(absoluteURL)
+		// e.Request.Visit(absoluteURL)
 	}
 }
 
-func (w *Crawler) OnError(ctx context.Context, collector *colly.Collector) colly.ErrorCallback {
+func (w *Crawler) OnError(collector *colly.Collector) colly.ErrorCallback {
 	return func(r *colly.Response, err error) {
 		w.logger.Info("onerror: " + err.Error())
 		time.Sleep(w.IpRotationDelay)
@@ -26,17 +26,37 @@ func (w *Crawler) OnError(ctx context.Context, collector *colly.Collector) colly
 	}
 }
 
-func (w *Crawler) OnResponse(ctx context.Context) colly.ResponseCallback {
+// Extract SLD (second-level domain) from host
+func getSLD(host string) string {
+	parts := strings.Split(host, ".")
+	if len(parts) < 2 {
+		return host
+	}
+	return parts[len(parts)-2]
+}
+
+func (w *Crawler) OnResponse() colly.ResponseCallback {
 	return func(r *colly.Response) {
-		// url := r.Request.URL.String()
+		host := r.Request.URL.Host
+		sld := getSLD(host)
 
-		// contentType := r.Headers.Get("Content-Type")
-		// contentDisposition := r.Headers.Get("Content-Disposition")
+		if _, blocked := w.hostBlacklist[sld]; blocked {
+			return
+		}
 
-		// isDownloadable :=
-		// 	(strings.Contains(strings.ToLower(contentDisposition), "attachment") &&
-		// 		contentType == "application/octet-stream") ||
-		// 		contentType == "application/pdf"
+		path := r.Request.URL.Path
+		for _, blocked := range w.pathBlacklist {
+			if strings.Contains(path, blocked) {
+				return
+			}
+		}
+
+		url := r.Request.URL.String()
+		if err := w.crawlEvent.Publish("web_crawl_tasks", []byte(url)); err != nil {
+			w.logger.Error("Failed to publish URL",
+				zap.String("url", url),
+				zap.Error(err))
+		}
 	}
 }
 

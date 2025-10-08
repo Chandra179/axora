@@ -11,6 +11,7 @@ type Config struct {
 	ProxyURL      string
 	PostgresDBUrl string
 	DownloadPath  string
+	KafkaURL      string
 }
 
 func Load() (*Config, error) {
@@ -24,6 +25,7 @@ func Load() (*Config, error) {
 		ProxyURL:      getEnv("PROXY_URL"),
 		DownloadPath:  getEnv("DOWNLOAD_PATH"),
 		PostgresDBUrl: getEnv("POSTGRES_DB_URL"),
+		KafkaURL:      getEnv("KAFKA_URL"),
 	}, nil
 }
 

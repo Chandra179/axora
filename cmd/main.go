@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"log"
 	"net/http"
 	"net/url"
@@ -11,9 +10,11 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"axora/config"
 	"axora/crawler"
+	"axora/pkg/kafka"
 	"axora/pkg/postgres"
 
 	"go.uber.org/zap"
@@ -36,6 +37,10 @@ func main() {
 	if err != nil {
 		logger.Fatal("failed to create postgres client", zap.Error(err))
 	}
+	kafkaClient, err := kafka.NewClient(cfg.KafkaURL)
+	if err != nil {
+		logger.Fatal("failed to create nats client", zap.Error(err))
+	}
 
 	crawlerInstance, err := crawler.NewCrawler(
 		cfg.ProxyURL,
@@ -43,6 +48,7 @@ func main() {
 		httpTransport,
 		logger,
 		pg,
+		kafkaClient,
 	)
 	if err != nil {
 		logger.Fatal("failed to create crawler", zap.Error(err))
@@ -71,8 +77,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ctx := context.Background()
-			err := crawlerInstance.Crawl(ctx, ch, q)
+			err := crawlerInstance.Crawl(ch, q)
 			if err != nil {
 				logger.Info("err crawl: " + err.Error())
 			}
@@ -83,8 +88,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ctx := context.Background()
-			browser.CollectUrls(ctx, q, ch)
+			browser.CollectUrls(q, ch)
 			if err != nil {
 				logger.Info("error colect urls: " + err.Error())
 			}
@@ -126,8 +130,11 @@ func main() {
 func NewHttpClient(proxyUrl string) (*http.Client, *http.Transport) {
 	proxyURL, _ := url.Parse(proxyUrl)
 	transport := &http.Transport{
-		Proxy:             http.ProxyURL(proxyURL),
-		DisableKeepAlives: true,
+		Proxy:               http.ProxyURL(proxyURL),
+		IdleConnTimeout:     30 * time.Second,
+		MaxIdleConns:        100,
+		MaxIdleConnsPerHost: 10,
+		// DisableKeepAlives: true,
 	}
 	client := &http.Client{Transport: transport}
 	return client, transport
