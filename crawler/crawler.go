@@ -2,8 +2,6 @@ package crawler
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"net/http"
 	"regexp"
 	"time"
@@ -12,9 +10,22 @@ import (
 	"go.uber.org/zap"
 )
 
-type ContextKey string
+type DownloadableURL struct {
+	ID  string
+	URL string
+}
 
-var BooksdlPattern = `^https://[^.]+\.booksdl\.lc/get\.php\?md5=[^&]+(?:&key=[^&]+)?$`
+type CrawlDocClient interface {
+	InsertOne(ctx context.Context, url string, isDownloadable bool, downloadStatus string) error
+	UpdateDownloadStatus(ctx context.Context, id string, status string) error
+	GetDownloadableUrls(ctx context.Context) ([]DownloadableURL, error)
+}
+
+type CrawlEvent interface {
+	Publish(subject string, msg []byte) error
+}
+
+type ContextKey string
 
 const (
 	ContextIDKey ContextKey = "context_id"
@@ -23,13 +34,13 @@ const (
 )
 
 type Crawler struct {
-	collector       *colly.Collector
-	logger          *zap.Logger
-	httpClient      http.Client
-	proxyUrl        string
-	IpRotationDelay time.Duration
-	keyword         string
-	crawlDoc        CrawlDocClient
+	collector  *colly.Collector
+	logger     *zap.Logger
+	httpClient http.Client
+	proxyUrl   string
+	keyword    string
+	crawlDoc   CrawlDocClient
+	crawlEvent CrawlEvent
 }
 
 func NewCrawler(
@@ -38,58 +49,56 @@ func NewCrawler(
 	httpTransport *http.Transport,
 	logger *zap.Logger,
 	crawlDoc CrawlDocClient,
+	crawlEvent CrawlEvent,
+	domains []string,
 ) (*Crawler, error) {
 	c := colly.NewCollector(
 		colly.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "+
 			"(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
-		colly.MaxDepth(3),
+		colly.MaxDepth(2),
 		colly.Async(true),
 		colly.TraceHTTP(),
 		colly.ParseHTTPErrorResponse(),
+		colly.AllowedDomains(domains...),
 		colly.URLFilters(
 			regexp.MustCompile(`^https://.*$`),
 			regexp.MustCompile(`^https://libgen\.li/index\.php\?req=[^&]+$`),
 			regexp.MustCompile(`^https://libgen\.li/edition\.php\?id=[^&]+$`),
 			regexp.MustCompile(`^https://libgen\.li/ads\.php\?md5=[^&]+$`),
 			regexp.MustCompile(`^https://libgen\.li/get\.php\?md5=[^&]+&key=[^&]+$`),
-			regexp.MustCompile(BooksdlPattern),
+			regexp.MustCompile(`^https://[^.]+\.booksdl\.lc/get\.php\?md5=[^&]+(?:&key=[^&]+)?$`),
 		),
 		// colly.Debugger(&debug.LogDebugger{}),
 	)
 
 	c.WithTransport(httpTransport)
 	c.SetClient(httpClient)
-	c.SetRequestTimeout(180 * time.Minute)
+	c.SetRequestTimeout(5 * time.Minute)
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 15,
-		Delay:       10 * time.Second,
+		Parallelism: 30,
+		Delay:       3 * time.Second,
+		RandomDelay: 3 * time.Second,
 	})
 	c.IgnoreRobotsTxt = true
 
 	worker := &Crawler{
-		collector:       c,
-		logger:          logger,
-		httpClient:      *httpClient,
-		proxyUrl:        proxyUrl,
-		IpRotationDelay: 40 * time.Second,
-		crawlDoc:        crawlDoc,
+		collector:  c,
+		logger:     logger,
+		httpClient: *httpClient,
+		proxyUrl:   proxyUrl,
+		crawlDoc:   crawlDoc,
+		crawlEvent: crawlEvent,
 	}
 
 	return worker, nil
 }
 
-func (w *Crawler) Crawl(ctx context.Context, urls chan string, keyword string) error {
-	contextId := GenerateContextID()
-	ctx = context.WithValue(ctx, ContextIDKey, contextId)
-	w.logger.With(
-		zap.String(string(ContextIDKey), contextId),
-	)
-
-	w.collector.OnHTML("a[href]", w.OnHTML(ctx))
+func (w *Crawler) Crawl(urls chan string, keyword string) error {
+	w.collector.OnHTML("a[href]", w.OnHTML())
 	// w.collector.OnHTML("body", w.OnHTMLDOMLog(ctx))
-	w.collector.OnError(w.OnError(ctx, w.collector))
-	w.collector.OnResponse(w.OnResponse(ctx))
+	w.collector.OnError(w.OnError(w.collector))
+	w.collector.OnResponse(w.OnResponse())
 	w.keyword = keyword
 
 	for url := range urls {
@@ -97,20 +106,11 @@ func (w *Crawler) Crawl(ctx context.Context, urls chan string, keyword string) e
 			w.logger.Error("Failed to visit URL",
 				zap.String("url", url),
 				zap.Error(err))
-			return err
+			continue
 		}
 	}
 	w.collector.Wait()
 	w.logger.Info("Crawl session completed")
 
 	return nil
-}
-
-func GenerateContextID() string {
-	randomBytes := make([]byte, 16)
-	_, err := rand.Read(randomBytes)
-	if err != nil {
-		panic(err)
-	}
-	return hex.EncodeToString(randomBytes)
 }

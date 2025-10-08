@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"log"
 	"net/http"
 	"net/url"
@@ -11,9 +10,11 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"axora/config"
 	"axora/crawler"
+	"axora/pkg/kafka"
 	"axora/pkg/postgres"
 
 	"go.uber.org/zap"
@@ -24,17 +25,22 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
+	domains := config.LoadDomains("/app/domains.yaml")
 	logger, err := zap.NewProduction()
 	if err != nil {
 		log.Fatalf("failed to create logger: %v", err)
 	}
 	defer logger.Sync()
 
-	browser := crawler.NewBrowser(logger, cfg.ProxyURL)
+	// browser := crawler.NewBrowser(logger, cfg.ProxyURL)
 	httpClient, httpTransport := NewHttpClient(cfg.ProxyURL)
 	pg, err := postgres.NewClient(cfg.PostgresDBUrl)
 	if err != nil {
 		logger.Fatal("failed to create postgres client", zap.Error(err))
+	}
+	kafkaClient, err := kafka.NewClient(cfg.KafkaURL)
+	if err != nil {
+		logger.Fatal("failed to create nats client", zap.Error(err))
 	}
 
 	crawlerInstance, err := crawler.NewCrawler(
@@ -43,6 +49,8 @@ func main() {
 		httpTransport,
 		logger,
 		pg,
+		kafkaClient,
+		domains,
 	)
 	if err != nil {
 		logger.Fatal("failed to create crawler", zap.Error(err))
@@ -65,29 +73,31 @@ func main() {
 		}
 
 		ch := make(chan string)
-
 		var wg sync.WaitGroup
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ctx := context.Background()
-			err := crawlerInstance.Crawl(ctx, ch, q)
+			err := crawlerInstance.Crawl(ch, q)
 			if err != nil {
 				logger.Info("err crawl: " + err.Error())
 			}
 		}()
 
-		ch <- "https://libgen.vg/index.php?req=" + q
+		// ch <- "https://libgen.vg/index.php?req=" + q
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			ctx := context.Background()
-			browser.CollectUrls(ctx, q, ch)
-			if err != nil {
-				logger.Info("error colect urls: " + err.Error())
+			for _, d := range domains {
+				url := "https://" + d
+				ch <- url
 			}
+
+			// browser.CollectUrls(q, ch)
+			// if err != nil {
+			// 	logger.Info("error colect urls: " + err.Error())
+			// }
 		}()
 
 		go func() {
@@ -126,9 +136,17 @@ func main() {
 func NewHttpClient(proxyUrl string) (*http.Client, *http.Transport) {
 	proxyURL, _ := url.Parse(proxyUrl)
 	transport := &http.Transport{
-		Proxy:             http.ProxyURL(proxyURL),
-		DisableKeepAlives: true,
+		Proxy:                 http.ProxyURL(proxyURL),
+		IdleConnTimeout:       90 * time.Second,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   10,
+		ResponseHeaderTimeout: 120 * time.Second,
 	}
-	client := &http.Client{Transport: transport}
+
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   5 * time.Minute,
+	}
+
 	return client, transport
 }
