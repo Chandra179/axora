@@ -27,7 +27,7 @@ func NewClient(url string) (*KafkaClient, error) {
 		MaxAttempts:  3,
 		WriteTimeout: 10 * time.Second,
 		ReadTimeout:  10 * time.Second,
-		Compression:  kafka.Snappy,
+		Compression:  kafka.Gzip,
 		Async:        false, // Set to true for fire-and-forget
 	}
 

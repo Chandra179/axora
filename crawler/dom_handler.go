@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 
 	"github.com/gocolly/colly/v2"
@@ -26,7 +27,20 @@ func (w *Crawler) OnError(collector *colly.Collector) colly.ErrorCallback {
 func (w *Crawler) OnResponse() colly.ResponseCallback {
 	return func(r *colly.Response) {
 		url := r.Request.URL.String()
-		if err := w.crawlEvent.Publish("web_crawl_tasks", []byte(url)); err != nil {
+
+		payload := map[string]string{
+			"url": url,
+		}
+
+		msgBytes, err := json.Marshal(payload)
+		if err != nil {
+			w.logger.Error("Failed to serialize URL to JSON",
+				zap.String("url", url),
+				zap.Error(err))
+			return
+		}
+
+		if err := w.crawlEvent.Publish("web_crawl_tasks", msgBytes); err != nil {
 			w.logger.Error("Failed to publish URL",
 				zap.String("url", url),
 				zap.Error(err))
