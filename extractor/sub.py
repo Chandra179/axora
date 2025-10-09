@@ -16,7 +16,7 @@ class KafkaClient:
         self.consumer = None
     
     def new_client(self, topic: str, group_id: str) -> KafkaConsumer:
-        """Create and initialize Kafka consumer connection"""
+        """initialize Kafka consumer connection"""
         try:
             self.consumer = KafkaConsumer(
                 topic,
