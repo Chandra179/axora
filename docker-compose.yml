@@ -37,20 +37,28 @@ services:
           cpus: '1.0'
           memory: 1G
 
+  # DEVELOPMENT MODE: Mount code directly for instant changes
   axora-extractor:
     build:
       context: .
       dockerfile: Dockerfile.piton
+      target: builder  # Stop at builder stage - has venv but no code copied
     container_name: axora-extractor
     environment:
       KAFKA_URL: axora-kafka:9092
+      PATH: /opt/venv/bin:/usr/local/bin:/usr/bin:/bin
+      PYTHONUNBUFFERED: 1
     depends_on:
       axora-kafka:
         condition: service_healthy
     networks:
       - axora-network
     volumes:
-      - ./extractor:/app
+      - .:/app:cached  # Mount code directly - instant changes!
+      - /app/__pycache__  # Exclude Python cache
+      - /app/.pytest_cache  # Exclude pytest cache
+    working_dir: /app
+    command: python main.py
 
   axora-tor-proxy:
     image: zhaowde/rotating-tor-http-proxy
@@ -91,7 +99,6 @@ services:
     ports:
       - "9092:9092"
     environment:
-      # KRaft mode (no Zookeeper needed)
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
@@ -100,7 +107,6 @@ services:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://axora-kafka:9092
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@axora-kafka:9093
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      # Additional settings 
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
       KAFKA_LOG_RETENTION_HOURS: 168
       KAFKA_LOG_SEGMENT_BYTES: 1073741824

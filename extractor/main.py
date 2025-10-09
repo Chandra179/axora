@@ -1,25 +1,22 @@
 from sub import KafkaClient
 import config
 import logging
+from docling.document_converter import DocumentConverter
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+converter = DocumentConverter()
 
 def process_message(message):
-    """
-    Process incoming Kafka message
+    url = message.get("url")
+    if not url:
+        return None
     
-    Args:
-        message: Deserialized message data (dict)
-    """
-    logger.info(f"Processing message: {message}")
+    doc = converter.convert(url).document
+    markdown_text = doc.export_to_markdown()
     
-    # Add your message processing logic here
-    # Example: extract data, store to database, etc.
-    
-    # For now, just log the message
-    print(f"Message data: {message}")
+    print(f"Processed {url}, text={markdown_text}")
 
 
 def main():

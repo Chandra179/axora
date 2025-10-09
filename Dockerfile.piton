@@ -1,23 +1,59 @@
-# Use latest official Python slim image
-FROM python:3.13-slim
+# syntax=docker/dockerfile:1
+FROM python:3.13-slim AS builder
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies (optional, useful for psycopg2, lxml, etc.)
+# Install system dependencies needed for building
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for caching
+# Copy requirements
 COPY ./extractor/requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Create venv and install dependencies with cache mount
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m venv /opt/venv && \
+    /opt/venv/bin/pip install --upgrade pip && \
+    /opt/venv/bin/pip install -r requirements.txt
+
+# ============================================
+# Final stage: Copy the entire venv
+# ============================================
+FROM python:3.13-slim AS final
+
+WORKDIR /app
+
+# Install only runtime dependencies (not build tools)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the entire virtual environment from builder
+COPY --from=builder /opt/venv /opt/venv
+
+# Set PATH to use venv
+ENV PATH="/opt/venv/bin:$PATH"
 
 # Copy application code
 COPY . .
 
-# Run your app (adjust if needed, e.g., main.py or uvicorn for FastAPI)
+# Run your app
+CMD ["python", "main.py"]
+
+# ============================================
+# Development stage: Use builder directly
+# ============================================
+FROM builder AS dev
+
+WORKDIR /app
+
+# Set PATH to use venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy application code
+COPY . .
+
+# Run your app
 CMD ["python", "main.py"]
