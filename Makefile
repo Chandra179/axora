@@ -19,7 +19,7 @@ run:
 # Stop all containers
 stop:
 	docker compose down
-
+	
 
 MIGRATIONS_PATH = ./migrations
 

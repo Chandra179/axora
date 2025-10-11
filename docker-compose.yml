@@ -57,7 +57,7 @@ services:
       - .:/app:cached  # Mount code directly - instant changes!
       - /app/__pycache__  # Exclude Python cache
       - /app/.pytest_cache  # Exclude pytest cache
-    working_dir: /app
+    working_dir: /app/extractor
     command: python main.py
 
   axora-tor-proxy:

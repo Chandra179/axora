@@ -12,6 +12,5 @@ conccurent web crawling system designed for concurrent, privacy-focused content 
 ## Python
 ```
 pip install pipreqs
-pipreqs /path/to/your/project
+pipreqs /extractor
 ```
-
