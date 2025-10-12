@@ -27,6 +27,7 @@ func (w *Crawler) OnError(collector *colly.Collector) colly.ErrorCallback {
 func (w *Crawler) OnResponse() colly.ResponseCallback {
 	return func(r *colly.Response) {
 		url := r.Request.URL.String()
+		w.logger.Info("url_log", zap.String("url", url))
 
 		payload := map[string]string{
 			"url": url,
@@ -66,6 +67,7 @@ func (w *Crawler) OnHTMLDOMLog(ctx context.Context) colly.HTMLCallback {
 
 		w.logger.Info("HTML DOM Structure",
 			zap.String("url", url),
+			zap.Strings("links", links),
 			zap.Int("links_count", len(links)))
 		// zap.Strings("links", links))
 	}

@@ -148,18 +148,3 @@ def calculate_quality_score(extracted_data: dict, target_language: str = "en") -
         "score": round(final_score, 3),
         "factors": factors
     }
-
-
-def is_quality_content(extracted_data: dict, target_language: str = "en") -> bool:
-    """
-    Simple boolean check if content passes quality threshold.
-    
-    Args:
-        extracted_data: Dictionary containing extracted content fields
-        target_language: Expected language code (default: "en")
-    
-    Returns:
-        Boolean indicating if content passed quality scoring (>= 0.7)
-    """
-    result = calculate_quality_score(extracted_data, target_language)
-    return result["passed"]

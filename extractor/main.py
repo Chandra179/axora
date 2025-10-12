@@ -1,12 +1,11 @@
 from sub import KafkaClient
 import config
 import structlog, logging
-from datetime import datetime
 import sys
 
 from url_validator import validate_url
 from web_extractor import extract_content
-from quality_scoring import is_quality_content
+from quality_scoring import calculate_quality_score
 
 
 logging.basicConfig(
@@ -56,12 +55,9 @@ def process_message(message):
             logger.error("content_extraction_failed", url=url)
             return None
         
-        # Quality scoring check
-        if not is_quality_content(extracted, target_language="en"):
-            logger.warning("content_failed_quality_check", url=url)
-            return None
-        
-        logger.info("content_passed_quality_check", url=url)
+        calc_res = calculate_quality_score(extracted, target_language="en")
+        logger.info("==============================================")
+        logger.info(extracted | calc_res)
         
         # If content passes all checks, you can process it further here
         # For example: store to database, send to another topic, etc.

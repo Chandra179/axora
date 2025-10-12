@@ -4,7 +4,6 @@ domains:
   - www.cnbc.com
   - www.bankofengland.co.uk
   - datatopics.worldbank.org
-  - www.merriam-webster.com
   - www.wsj.com
   - dictionary.cambridge.org
   - www.economy.com
@@ -16,7 +15,6 @@ domains:
   - www.oecd.org
   - www.bloomberg.com
   - www.reuters.com
-  - www.ft.com
   - finance.yahoo.com
   - www.marketwatch.com
   - www.morningstar.com
@@ -47,11 +45,7 @@ domains:
   - econjwatch.org
   - www.econbiz.de
   - www.econnet.org
-  - inomics.com
-  - www.tradingview.com
-  - finviz.com
-  - seekingalpha.com
-  - stockcharts.com
+  - www.inomics.com
   - www.zacks.com
   - www.benzinga.com
   - www.fool.com
@@ -68,3 +62,4 @@ domains:
   - www.bsp.gov.ph
   - www.bot.or.th
   - libgen.vg
+  - www.economylens.com
