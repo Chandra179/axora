@@ -31,8 +31,18 @@ def extract_content(url: str) -> Optional[dict]:
         data = json.loads(result)
         
         return {
+            "title": data.get("title"),
             "url": url,
-            "data": data
+            "author": data.get("author"),
+            "hostname": data.get("hostname"),
+            "date": data.get("date"),
+            "text": data.get("text"),
+            "language": data.get("language"),
+            "source": data.get("source"),
+            "source_hostname": data.get("source-hostname"),
+            "excerpt": data.get("excerpt"),
+            "categories": data.get("categories"),
+            "tags": data.get("tags"),
         }
         
     except json.JSONDecodeError as e:

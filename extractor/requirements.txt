@@ -1,7 +1,6 @@
-docling==2.55.1
-kafka_python==2.2.15
-
-# Web Content Extraction
+langdetect==1.0.9
+nltk==3.9.2
+Requests==2.32.5
+structlog==25.4.0
+textstat==0.7.10
 trafilatura==1.12.2
-
-structlog>=23.1.0
