@@ -3,3 +3,5 @@ kafka_python==2.2.15
 
 # Web Content Extraction
 trafilatura==1.12.2
+
+structlog>=23.1.0
