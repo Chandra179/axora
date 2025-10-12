@@ -2,6 +2,7 @@ import structlog
 import trafilatura
 import json
 from typing import Optional
+from lxml import html
 
 logger = structlog.get_logger(__name__)
 
@@ -30,6 +31,15 @@ def extract_content(url: str) -> Optional[dict]:
         
         data = json.loads(result)
         
+        links = []
+        try:
+            tree = html.fromstring(downloaded)
+            links = tree.xpath('//a/@href')
+            # Filter out empty links and fragments
+            links = [link for link in links if link and not link.startswith('#')]
+        except Exception as e:
+            logger.warning("link_extraction_failed", url=url, error=str(e))
+        
         return {
             "title": data.get("title"),
             "url": url,
@@ -43,6 +53,7 @@ def extract_content(url: str) -> Optional[dict]:
             "excerpt": data.get("excerpt"),
             "categories": data.get("categories"),
             "tags": data.get("tags"),
+            "links": links,
         }
         
     except json.JSONDecodeError as e:

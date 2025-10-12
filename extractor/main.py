@@ -6,6 +6,7 @@ import sys
 
 from url_validator import validate_url
 from web_extractor import extract_content
+from quality_scoring import is_quality_content
 
 
 logging.basicConfig(
@@ -54,6 +55,17 @@ def process_message(message):
         if not extracted:
             logger.error("content_extraction_failed", url=url)
             return None
+        
+        # Quality scoring check
+        if not is_quality_content(extracted, target_language="en"):
+            logger.warning("content_failed_quality_check", url=url)
+            return None
+        
+        logger.info("content_passed_quality_check", url=url)
+        
+        # If content passes all checks, you can process it further here
+        # For example: store to database, send to another topic, etc.
+        return extracted
         
     except Exception as e:
         logger.error("message_processing_error", 
