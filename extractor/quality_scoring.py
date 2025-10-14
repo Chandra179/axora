@@ -29,6 +29,8 @@ def calculate_quality_score(extracted_data: dict, target_language: str = "en") -
     title = extracted_data.get("title")
     author = extracted_data.get("author")
     date = extracted_data.get("date")
+    tags = extracted_data.get("tags")
+    excerpt = extracted_data.get("excerpt")
     
     if not text:
         logger.warning("quality_score_no_text")
@@ -68,21 +70,7 @@ def calculate_quality_score(extracted_data: dict, target_language: str = "en") -
         logger.warning("readability_calculation_failed", error=str(e))
         factors["readability"] = 0.5  # Default to middle score
     
-    # 4. Link Density
-    links = extracted_data.get("links", [])
-    links_count = len(links) if links else 0
-    link_density = links_count / word_count if word_count > 0 else 0
-    
-    if link_density < 0.01:
-        factors["link_density"] = 1.0
-    elif link_density < 0.03:
-        factors["link_density"] = 0.7
-    elif link_density < 0.05:
-        factors["link_density"] = 0.4
-    else:
-        factors["link_density"] = 0.2
-    
-    # 5. Language Detection
+    # 4. Language Detection
     try:
         detected_lang = detect(text)
         factors["language"] = 1.0 if detected_lang == target_language else 0.0
@@ -90,7 +78,7 @@ def calculate_quality_score(extracted_data: dict, target_language: str = "en") -
         logger.warning("language_detection_failed", error=str(e))
         factors["language"] = 0.5  # Default to middle score
     
-    # 6. Stopword Ratio
+    # 5. Stopword Ratio
     try:
         stop_words = set(stopwords.words('english'))
         stopword_count = sum(1 for word in words if word.lower() in stop_words)
@@ -106,17 +94,21 @@ def calculate_quality_score(extracted_data: dict, target_language: str = "en") -
         logger.warning("stopword_calculation_failed", error=str(e))
         factors["stopword_ratio"] = 0.5  # Default to middle score
     
-    # 7. Rich Metadata
+    # 6. Rich Metadata
     metadata_count = sum([
         1 if title else 0,
         1 if author else 0,
-        1 if date else 0
+        1 if date else 0,
+        1 if tags else 0,
+        1 if excerpt else 0
     ])
     
-    if metadata_count == 3:
+    if metadata_count >= 4:
         factors["metadata"] = 1.0
-    elif metadata_count == 2:
+    elif metadata_count == 3:
         factors["metadata"] = 0.7
+    elif metadata_count == 2:
+        factors["metadata"] = 0.5
     elif metadata_count == 1:
         factors["metadata"] = 0.3
     else:
@@ -127,10 +119,9 @@ def calculate_quality_score(extracted_data: dict, target_language: str = "en") -
         factors["title"] * 0.10 +
         factors["length"] * 0.20 +
         factors["readability"] * 0.15 +
-        factors["link_density"] * 0.10 +
         factors["language"] * 0.10 +
         factors["stopword_ratio"] * 0.15 +
-        factors["metadata"] * 0.20
+        factors["metadata"] * 0.30
     )
     
     passed = final_score >= 0.7

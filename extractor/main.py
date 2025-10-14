@@ -2,6 +2,8 @@ from sub import KafkaClient
 import config
 import structlog, logging
 import sys
+from transformers import pipeline
+import torch
 
 from url_validator import validate_url
 from web_extractor import extract_content
@@ -32,6 +34,7 @@ structlog.configure(
 )
 
 logger = structlog.get_logger(__name__)
+pipe = pipeline(model="typeform/distilbert-base-uncased-mnli")
 
 
 def process_message(message):
@@ -58,6 +61,13 @@ def process_message(message):
         calc_res = calculate_quality_score(extracted, target_language="en")
         logger.info("==============================================")
         logger.info(extracted | calc_res)
+        
+
+        result = pipe(extracted.get("title") + extracted.get("excerpt") + extracted.get("text"),
+            candidate_labels=["economy", "macroeconomics", "inflation", "debt", "microeconomics", "financial markets"],
+        )
+        logger.info("+++++++++++++++++++++++++++++++++")
+        print(result)
         
         # If content passes all checks, you can process it further here
         # For example: store to database, send to another topic, etc.

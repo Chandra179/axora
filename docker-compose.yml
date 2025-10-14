@@ -34,7 +34,7 @@ services:
           cpus: '3.0'
           memory: 3G
         reservations:
-          cpus: '1.0'
+          cpus: '1.0' 
           memory: 1G
 
   # DEVELOPMENT MODE: Mount code directly for instant changes
