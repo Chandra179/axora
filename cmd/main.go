@@ -84,21 +84,17 @@ func main() {
 			}
 		}()
 
-		// ch <- "https://libgen.vg/index.php?req=" + q
+		ch <- "https://en.wikipedia.org/wiki/Economy"
 
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for _, d := range domains {
-				url := "https://" + d
-				ch <- url
-			}
+		// wg.Add(1)
+		// go func() {
+		// 	defer wg.Done()
 
-			// browser.CollectUrls(q, ch)
-			// if err != nil {
-			// 	logger.Info("error colect urls: " + err.Error())
-			// }
-		}()
+		// browser.CollectUrls(q, ch)
+		// if err != nil {
+		// 	logger.Info("error colect urls: " + err.Error())
+		// }
+		// }()
 
 		go func() {
 			wg.Wait()

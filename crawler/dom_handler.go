@@ -1,7 +1,6 @@
 package crawler
 
 import (
-	"context"
 	"encoding/json"
 	"strings"
 
@@ -20,7 +19,6 @@ func (w *Crawler) OnHTML() colly.HTMLCallback {
 func (w *Crawler) OnError(collector *colly.Collector) colly.ErrorCallback {
 	return func(r *colly.Response, err error) {
 		w.logger.Info("onerror: " + err.Error())
-		// r.Request.Retry()
 	}
 }
 
@@ -49,7 +47,7 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 	}
 }
 
-func (w *Crawler) OnHTMLDOMLog(ctx context.Context) colly.HTMLCallback {
+func (w *Crawler) OnHTMLDOMLog() colly.HTMLCallback {
 	return func(e *colly.HTMLElement) {
 		url := e.Request.URL.String()
 

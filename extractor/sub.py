@@ -43,14 +43,9 @@ class KafkaClient:
             while True:
                 msg_pack = consumer.poll(timeout_ms=1000)
                 
-                for tp, messages in msg_pack.items():
+                for _, messages in msg_pack.items():
                     for message in messages:
                         try:
-                            logger.info("message_received", 
-                                       topic=message.topic,
-                                       partition=message.partition,
-                                       offset=message.offset)
-                            
                             on_message(message.value)
                             
                         except Exception as e:

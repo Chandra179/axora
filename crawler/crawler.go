@@ -76,8 +76,8 @@ func NewCrawler(
 	c.SetRequestTimeout(5 * time.Minute)
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 30,
-		Delay:       3 * time.Second,
+		Parallelism: 5,
+		Delay:       10 * time.Second,
 		RandomDelay: 3 * time.Second,
 	})
 	c.IgnoreRobotsTxt = true

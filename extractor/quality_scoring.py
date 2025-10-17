@@ -126,14 +126,6 @@ def calculate_quality_score(extracted_data: dict, target_language: str = "en") -
     
     passed = final_score >= 0.7
     
-    logger.info(
-        "quality_score_calculated",
-        score=round(final_score, 3),
-        passed=passed,
-        word_count=word_count,
-        factors={k: round(v, 2) for k, v in factors.items()}
-    )
-    
     return {
         "passed": passed,
         "score": round(final_score, 3),
