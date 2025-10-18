@@ -97,5 +97,5 @@ func sentenceScore(sentenceCount int, avgSentenceLength float64) float64 {
 }
 
 func qualityScore(length, richness, sentence float64) float64 {
-	return (0.4*length + 0.4*richness + 0.2*sentence) * 100
+	return (0.6*length + 0.2*richness + 0.2*sentence) * 100
 }
