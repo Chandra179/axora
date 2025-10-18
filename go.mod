@@ -3,6 +3,7 @@ module axora
 go 1.25.0
 
 require (
+	github.com/PuerkitoBio/goquery v1.10.3
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/chromedp/cdproto v0.0.0-20250724212937-08a3db8b4327
 	github.com/chromedp/chromedp v0.14.1
@@ -11,6 +12,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.19.0
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgx/v5 v5.7.6
+	github.com/kljensen/snowball v0.10.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/segmentio/kafka-go v0.4.49
 	go.uber.org/zap v1.27.0
@@ -18,7 +20,6 @@ require (
 )
 
 require (
-	github.com/PuerkitoBio/goquery v1.10.3 // indirect
 	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/antchfx/htmlquery v1.3.4 // indirect
 	github.com/antchfx/xmlquery v1.4.4 // indirect
