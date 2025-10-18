@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/gocolly/colly/v2"
-	"github.com/markusmobius/go-trafilatura"
 	"go.uber.org/zap"
 )
 
@@ -34,48 +33,13 @@ const (
 	LinkID       ContextKey = "link_id"
 )
 
-type ContentQualityRules struct {
-	MinWordCount         int     // Minimum word count (e.g., 200)
-	MinTextHTMLRatio     float64 // Minimum text-to-HTML ratio (e.g., 0.25)
-	MinSentenceCount     int     // Minimum sentence count
-	MinAvgSentenceLength int     // Minimum average sentence length
-	MaxAvgSentenceLength int     // Maximum average sentence length
-	MinVocabRichness     float64 // Minimum vocabulary richness (e.g., 0.3)
-	MaxLinkDensity       float64 // Maximum link density (e.g., 0.1)
-	MaxAdScriptCount     int     // Maximum advertisement/tracking script count
-}
-
-type ContentMetrics struct {
-	Text               string
-	WordCount          int
-	TextLength         int
-	HTMLLength         int
-	TextHTMLRatio      float64
-	SentenceCount      int
-	AvgSentenceLength  float64
-	VocabRichness      float64
-	UniqueWords        int
-	LinkDensity        float64
-	ExternalLinkCount  int
-	AdScriptCount      int
-	HasParagraphs      bool
-	HasHeadings        bool
-	ParagraphCount     int
-	HeadingCount       int
-	PassesQualityCheck bool
-	FailureReasons     []string
-	metadata           trafilatura.Metadata
-}
-
 type Crawler struct {
-	collector      *colly.Collector
-	logger         *zap.Logger
-	httpClient     http.Client
-	proxyUrl       string
-	crawlDoc       CrawlDocClient
-	crawlEvent     CrawlEvent
-	qualityRules   ContentQualityRules
-	trafilaturaOpt trafilatura.Options
+	collector  *colly.Collector
+	logger     *zap.Logger
+	httpClient http.Client
+	proxyUrl   string
+	crawlDoc   CrawlDocClient
+	crawlEvent CrawlEvent
 }
 
 func NewCrawler(
@@ -124,23 +88,6 @@ func NewCrawler(
 		proxyUrl:   proxyUrl,
 		crawlDoc:   crawlDoc,
 		crawlEvent: crawlEvent,
-		qualityRules: ContentQualityRules{
-			MinWordCount:         200,
-			MinTextHTMLRatio:     0.25,
-			MinSentenceCount:     5,
-			MinAvgSentenceLength: 10,
-			MaxAvgSentenceLength: 50,
-			MinVocabRichness:     0.3,
-			MaxLinkDensity:       0.1,
-			MaxAdScriptCount:     5,
-		},
-		trafilaturaOpt: trafilatura.Options{
-			EnableFallback:       true,
-			IncludeLinks:         true,
-			ExcludeComments:      true,
-			ExcludeTables:        false,
-			HasEssentialMetadata: true,
-		},
 	}
 
 	return worker, nil
