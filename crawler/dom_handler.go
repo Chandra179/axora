@@ -95,8 +95,15 @@ func isTopicRelevant(text, topic string) bool {
 	text = strings.ToLower(text)
 	topicStem := stemWord(topic)
 
+	// Calculate minimum prefix length for matching
+	// Use at least 4 characters, or the full stem length if shorter
+	minPrefixLen := 4
+	if len(topicStem) < minPrefixLen {
+		minPrefixLen = len(topicStem)
+	}
+
 	// early filter to avoid full tokenization if text clearly unrelated
-	if !strings.Contains(text, topic[:3]) {
+	if len(topic) >= 3 && !strings.Contains(text, topic[:3]) {
 		return false
 	}
 
@@ -105,11 +112,22 @@ func isTopicRelevant(text, topic string) bool {
 	})
 
 	for _, w := range words {
-		if !strings.Contains(w, topic[:3]) {
+		if len(topic) >= 3 && !strings.Contains(w, topic[:3]) {
 			continue
 		}
 		stem := stemWord(w)
-		if stem == topicStem {
+
+		// Calculate the minimum length between the two stems
+		compareLen := minPrefixLen
+		if len(stem) < compareLen {
+			compareLen = len(stem)
+		}
+		if len(topicStem) < compareLen {
+			compareLen = len(topicStem)
+		}
+
+		// Match if stems share a common prefix
+		if compareLen > 0 && compareLen >= minPrefixLen && stem[:compareLen] == topicStem[:compareLen] {
 			return true
 		}
 	}

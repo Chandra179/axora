@@ -29,6 +29,15 @@ func (w *Crawler) CleanHTML(body []byte, pageURL string) (*readability.Article, 
 	words := strings.Fields(article.TextContent)
 	wordCount := len(words)
 
+	htmlSize := len(body)
+	textSize := len(article.TextContent)
+	textRatio := 0.0
+	if htmlSize > 0 {
+		textRatio = float64(textSize) / float64(htmlSize) * 100
+	}
+	textRatioScoreVal := textRatioScore(textRatio)
+	lengthScoreVal := lengthScore(wordCount)
+
 	unique := make(map[string]struct{}, len(words))
 	for _, w := range words {
 		w = strings.ToLower(strings.Trim(w, ".,!?\"'():;[]{}"))
@@ -37,6 +46,7 @@ func (w *Crawler) CleanHTML(body []byte, pageURL string) (*readability.Article, 
 		}
 	}
 	vocabRichness := float64(len(unique)) / float64(len(words))
+	richnessScoreVal := richnessScore(vocabRichness)
 
 	re := regexp.MustCompile(`[.!?]+`)
 	sentences := re.Split(article.TextContent, -1)
@@ -45,12 +55,9 @@ func (w *Crawler) CleanHTML(body []byte, pageURL string) (*readability.Article, 
 		sentenceCount = 1 // avoid divide by zero
 	}
 	avgSentenceLength := float64(wordCount) / float64(sentenceCount)
-
-	lengthScoreVal := lengthScore(wordCount)
-	richnessScoreVal := richnessScore(vocabRichness)
 	sentenceScoreVal := sentenceScore(sentenceCount, avgSentenceLength)
 
-	finalScore := qualityScore(lengthScoreVal, richnessScoreVal, sentenceScoreVal)
+	finalScore := qualityScore(lengthScoreVal, richnessScoreVal, sentenceScoreVal, textRatioScoreVal)
 
 	w.logger.Info("article_quality_metrics",
 		zap.String("url", pageURL),
@@ -58,6 +65,9 @@ func (w *Crawler) CleanHTML(body []byte, pageURL string) (*readability.Article, 
 		zap.Float64("vocab_richness", vocabRichness),
 		zap.Int("sentence_count", sentenceCount),
 		zap.Float64("avg_sentence_length", avgSentenceLength),
+		zap.Int("html_size", htmlSize),
+		zap.Int("text_size", textSize),
+		zap.Float64("text_ratio_percent", textRatio),
 		zap.Float64("score", finalScore),
 	)
 
@@ -96,6 +106,21 @@ func sentenceScore(sentenceCount int, avgSentenceLength float64) float64 {
 	return 1.0
 }
 
-func qualityScore(length, richness, sentence float64) float64 {
-	return (0.6*length + 0.2*richness + 0.2*sentence) * 100
+func qualityScore(length, richness, sentence, textRatio float64) float64 {
+	return (0.4*length + 0.25*textRatio + 0.2*richness + 0.15*sentence) * 100
+}
+
+func textRatioScore(textRatio float64) float64 {
+	switch {
+	case textRatio < 10:
+		return 0.0 // Very low ratio - likely navigation/ads heavy
+	case textRatio < 15:
+		return 0.5 // Borderline - somewhat navigation heavy
+	case textRatio >= 15 && textRatio <= 40:
+		return 1.0 // Ideal range for quality content
+	case textRatio > 40 && textRatio <= 60:
+		return 0.8 // High but acceptable - might be simple pages
+	default:
+		return 0.6 // Very high - might be plain text dumps
+	}
 }
