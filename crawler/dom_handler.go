@@ -37,6 +37,8 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 
 		w.logger.Info("content_metrics",
 			zap.String("url", url),
+			zap.String("text", metrics.Text),
+			zap.Any("metadata", metrics.metadata),
 			zap.Int("word_count", metrics.WordCount),
 			zap.Float64("text_html_ratio", math.Round(metrics.TextHTMLRatio*1000)/1000),
 			zap.Int("sentence_count", metrics.SentenceCount),

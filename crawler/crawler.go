@@ -46,6 +46,7 @@ type ContentQualityRules struct {
 }
 
 type ContentMetrics struct {
+	Text               string
 	WordCount          int
 	TextLength         int
 	HTMLLength         int
@@ -63,6 +64,7 @@ type ContentMetrics struct {
 	HeadingCount       int
 	PassesQualityCheck bool
 	FailureReasons     []string
+	metadata           trafilatura.Metadata
 }
 
 type Crawler struct {
@@ -133,10 +135,11 @@ func NewCrawler(
 			MaxAdScriptCount:     5,
 		},
 		trafilaturaOpt: trafilatura.Options{
-			EnableFallback:  true,
-			IncludeLinks:    false,
-			ExcludeComments: true,
-			ExcludeTables:   false,
+			EnableFallback:       true,
+			IncludeLinks:         true,
+			ExcludeComments:      true,
+			ExcludeTables:        false,
+			HasEssentialMetadata: true,
 		},
 	}
 

@@ -42,6 +42,8 @@ func (w *Crawler) analyzeContentQuality(htmlBody []byte, result *trafilatura.Ext
 	}
 
 	text := result.ContentText
+	metrics.Text = text
+	metrics.metadata = result.Metadata
 
 	words := w.extractWords(text)
 	metrics.WordCount = len(words)
