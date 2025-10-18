@@ -59,16 +59,11 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 
 		topic := "economy"
 
-		metaText := extractMetaText(doc, topic)
-		title := strings.ToLower(doc.Find("title").Text())
-
-		metaRelevant := isTopicRelevant(metaText, topic)
+		isMetaRelevant := isMetaRelevant(doc, topic)
+		title := doc.Find("title").Text()
 		titleRelevant := isTopicRelevant(title, topic)
 
-		if !metaRelevant && !titleRelevant {
-			w.logger.Info("skipped_non_topic_page",
-				zap.String("url", url),
-				zap.String("reason", "no relevant keyword in title/meta"))
+		if !isMetaRelevant || !titleRelevant {
 			return
 		}
 		result, err := w.CleanHTML(r.Body, url)
@@ -78,12 +73,12 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 				zap.Error(err))
 			return
 		}
-		w.logger.Info("clean_result",
+		w.logger.Info("result",
+			zap.String("url", url),
 			zap.String("sitename", result.SiteName),
 			zap.String("text", result.TextContent),
 			zap.String("title", result.Title),
 			zap.String("excerpt", result.Excerpt),
-			zap.Int("length", result.Length),
 		)
 	}
 }
@@ -121,31 +116,22 @@ func isTopicRelevant(text, topic string) bool {
 	return false
 }
 
-func extractMetaText(doc *goquery.Document, topic string) string {
-	var builder strings.Builder
+func isMetaRelevant(doc *goquery.Document, topic string) bool {
+	var isRelevant bool
 
-	doc.Find("meta").Each(func(i int, s *goquery.Selection) {
+	metas := doc.Find("meta")
+	for i := 0; i < metas.Length(); i++ {
+		s := metas.Eq(i)
 		name, _ := s.Attr("name")
 		prop, _ := s.Attr("property")
 		content, _ := s.Attr("content")
 
-		if content == "" {
-			return
+		if isTopicRelevant(name+prop+content, topic) {
+			isRelevant = true
+			break
 		}
-
-		name = strings.ToLower(name)
-		prop = strings.ToLower(prop)
-		content = strings.ToLower(content)
-
-		if isTopicRelevant(name, topic) ||
-			isTopicRelevant(prop, topic) ||
-			isTopicRelevant(content, topic) {
-			builder.WriteString(" ")
-			builder.WriteString(content)
-		}
-	})
-
-	return builder.String()
+	}
+	return isRelevant
 }
 
 func (w *Crawler) OnHTMLDOMLog() colly.HTMLCallback {
