@@ -1,1 +1,3 @@
-GET http://localhost:8080/scrap?q=economy
+# GET http://localhost:8080/browse?q=economy
+
+GET http://localhost:8080/seed

@@ -37,29 +37,6 @@ services:
           cpus: '1.0' 
           memory: 1G
 
-  # DEVELOPMENT MODE: Mount code directly for instant changes
-  axora-extractor:
-    build:
-      context: .
-      dockerfile: Dockerfile.piton
-      target: builder  # Stop at builder stage - has venv but no code copied
-    container_name: axora-extractor
-    environment:
-      KAFKA_URL: axora-kafka:9092
-      PATH: /opt/venv/bin:/usr/local/bin:/usr/bin:/bin
-      PYTHONUNBUFFERED: 1
-    depends_on:
-      axora-kafka:
-        condition: service_healthy
-    networks:
-      - axora-network
-    volumes:
-      - .:/app:cached  # Mount code directly - instant changes!
-      - /app/__pycache__  # Exclude Python cache
-      - /app/.pytest_cache  # Exclude pytest cache
-    working_dir: /app/extractor
-    command: python main.py
-
   axora-tor-proxy:
     image: zhaowde/rotating-tor-http-proxy
     container_name: axora-tor-proxy

@@ -1,22 +1,12 @@
-# Rebuild & restart containers (fast path for code-only changes)
 rebuild:
-	DOCKER_BUILDKIT=1 docker compose up -d --build axora-crawler axora-extractor
+	DOCKER_BUILDKIT=1 docker compose up -d --build axora-crawler 
 
-# New dependency → rebuild images, then restart containers
-deps:
-	DOCKER_BUILDKIT=1 docker compose build axora-crawler axora-extractor
-	DOCKER_BUILDKIT=1 docker compose up -d axora-crawler axora-extractor
-
-# Base image or system dependency change → force full rebuild
-clean-build:
-	DOCKER_BUILDKIT=1 docker compose build --no-cache axora-crawler axora-extractor
-	DOCKER_BUILDKIT=1 docker compose up -d axora-crawler axora-extractor
-
-# Run everything (without forcing rebuild unless image missing)
 run:
 	DOCKER_BUILDKIT=1 docker compose up -d
 
-# Stop all containers
+ins:
+	go mod tidy && go mod vendor
+
 stop:
 	docker compose down
 	

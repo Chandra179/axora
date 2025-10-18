@@ -32,8 +32,9 @@ func main() {
 	}
 	defer logger.Sync()
 
-	// browser := crawler.NewBrowser(logger, cfg.ProxyURL)
+	browser := crawler.NewBrowser(logger, cfg.ProxyURL)
 	httpClient, httpTransport := NewHttpClient(cfg.ProxyURL)
+
 	pg, err := postgres.NewClient(cfg.PostgresDBUrl)
 	if err != nil {
 		logger.Fatal("failed to create postgres client", zap.Error(err))
@@ -42,7 +43,6 @@ func main() {
 	if err != nil {
 		logger.Fatal("failed to create nats client", zap.Error(err))
 	}
-
 	crawlerInstance, err := crawler.NewCrawler(
 		cfg.ProxyURL,
 		httpClient,
@@ -64,37 +64,20 @@ func main() {
 	if err := downloadManager.Start(); err != nil {
 		logger.Fatal("failed to start download manager", zap.Error(err))
 	}
+	ch := make(chan string)
+	var wg sync.WaitGroup
 
-	h := func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query().Get("q")
-		if strings.TrimSpace(q) == "" {
-			http.Error(w, "missing q parameter", http.StatusBadRequest)
-			return
-		}
-
-		ch := make(chan string)
-		var wg sync.WaitGroup
-
+	seedh := func(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := crawlerInstance.Crawl(ch, q)
+			err := crawlerInstance.Crawl(ch)
 			if err != nil {
 				logger.Info("err crawl: " + err.Error())
 			}
 		}()
 
 		ch <- "https://en.wikipedia.org/wiki/Economy"
-
-		// wg.Add(1)
-		// go func() {
-		// 	defer wg.Done()
-
-		// browser.CollectUrls(q, ch)
-		// if err != nil {
-		// 	logger.Info("error colect urls: " + err.Error())
-		// }
-		// }()
 
 		go func() {
 			wg.Wait()
@@ -105,7 +88,38 @@ func main() {
 		_, _ = w.Write([]byte("Crawl started"))
 	}
 
-	http.HandleFunc("/scrap", h)
+	browseh := func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query().Get("q")
+		if strings.TrimSpace(q) == "" {
+			http.Error(w, "missing q parameter", http.StatusBadRequest)
+			return
+		}
+
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := crawlerInstance.Crawl(ch)
+			if err != nil {
+				logger.Info("err crawl: " + err.Error())
+			}
+		}()
+
+		browser.CollectUrls(q, ch)
+		if err != nil {
+			logger.Info("error colect urls: " + err.Error())
+		}
+
+		go func() {
+			wg.Wait()
+			close(ch)
+		}()
+
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("Crawl started"))
+	}
+
+	http.HandleFunc("/seed", seedh)
+	http.HandleFunc("/browse", browseh)
 
 	serverErrors := make(chan error, 1)
 	go func() {
@@ -119,12 +133,9 @@ func main() {
 	select {
 	case err := <-serverErrors:
 		logger.Fatal("server error", zap.Error(err))
-
 	case sig := <-shutdown:
 		logger.Info("shutdown signal received", zap.String("signal", sig.String()))
-
 		downloadManager.Stop()
-
 		logger.Info("shutdown complete")
 	}
 }
