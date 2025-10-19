@@ -11,6 +11,7 @@ import (
 
 	"axora/config"
 	"axora/crawler"
+	"axora/pkg/embedding"
 	qdrantClient "axora/pkg/qdrantdb"
 
 	"go.uber.org/zap"
@@ -58,6 +59,19 @@ func main() {
 	}
 
 	// =========
+	// Embedding Client
+	// =========
+	embeddingClient := embedding.NewMpnetBaseV2(cfg.MpnetBaseV2Url)
+
+	// =========
+	// Chunking Client
+	// =========
+	chunkingClient, err := crawler.NewSentenceChunker(512, embeddingClient) // 512 token limit
+	if err != nil {
+		log.Fatalf("Failed to initialize chunking client: %v", err)
+	}
+
+	// =========
 	// Crawler Service
 	// =========
 	crawlerInstance, err := crawler.NewCrawler(
@@ -66,6 +80,7 @@ func main() {
 		httpTransport,
 		logger,
 		qdb,
+		chunkingClient,
 		domains,
 	)
 	if err != nil {

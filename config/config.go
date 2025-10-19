@@ -9,13 +9,12 @@ import (
 )
 
 type Config struct {
-	AppPort       int
-	ProxyURL      string
-	PostgresDBUrl string
-	DownloadPath  string
-	KafkaURL      string
-	QdrantHost    string
-	QdrantPort    int
+	AppPort        int
+	ProxyURL       string
+	DownloadPath   string
+	QdrantHost     string
+	QdrantPort     int
+	MpnetBaseV2Url string
 }
 
 func Load() (*Config, error) {
@@ -29,13 +28,12 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		AppPort:       appPort,
-		ProxyURL:      getEnv("PROXY_URL"),
-		DownloadPath:  getEnv("DOWNLOAD_PATH"),
-		PostgresDBUrl: getEnv("POSTGRES_DB_URL"),
-		KafkaURL:      getEnv("KAFKA_URL"),
-		QdrantPort:    qdrantPort,
-		QdrantHost:    getEnv("QDRANT_HOST"),
+		AppPort:        appPort,
+		ProxyURL:       getEnv("PROXY_URL"),
+		DownloadPath:   getEnv("DOWNLOAD_PATH"),
+		QdrantPort:     qdrantPort,
+		QdrantHost:     getEnv("QDRANT_HOST"),
+		MpnetBaseV2Url: getEnv("MPNET_BASEV2_URL"),
 	}, nil
 }
 

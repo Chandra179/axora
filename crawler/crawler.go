@@ -15,16 +15,6 @@ type DownloadableURL struct {
 	URL string
 }
 
-type CrawlDocClient interface {
-	InsertOne(ctx context.Context, url string, isDownloadable bool, downloadStatus string) error
-	UpdateDownloadStatus(ctx context.Context, id string, status string) error
-	GetDownloadableUrls(ctx context.Context) ([]DownloadableURL, error)
-}
-
-type CrawlEvent interface {
-	Publish(subject string, msg []byte) error
-}
-
 type CrawlVectorRepo interface {
 	InsertOne(ctx context.Context, doc *CrawlVectorDoc) error
 }
@@ -45,13 +35,12 @@ const (
 )
 
 type Crawler struct {
-	collector   *colly.Collector
-	logger      *zap.Logger
-	httpClient  http.Client
-	proxyUrl    string
-	crawlDoc    CrawlDocClient
-	crawlEvent  CrawlEvent
-	crawlVector CrawlVectorRepo
+	collector      *colly.Collector
+	logger         *zap.Logger
+	httpClient     http.Client
+	proxyUrl       string
+	crawlVector    CrawlVectorRepo
+	chunkingClient ChunkingClient
 }
 
 func NewCrawler(
@@ -60,6 +49,7 @@ func NewCrawler(
 	httpTransport *http.Transport,
 	logger *zap.Logger,
 	crawlVector CrawlVectorRepo,
+	chunkingClient ChunkingClient,
 	domains []string,
 ) (*Crawler, error) {
 	c := colly.NewCollector(
@@ -93,11 +83,12 @@ func NewCrawler(
 	c.IgnoreRobotsTxt = true
 
 	worker := &Crawler{
-		collector:   c,
-		logger:      logger,
-		httpClient:  *httpClient,
-		proxyUrl:    proxyUrl,
-		crawlVector: crawlVector,
+		collector:      c,
+		logger:         logger,
+		httpClient:     *httpClient,
+		proxyUrl:       proxyUrl,
+		crawlVector:    crawlVector,
+		chunkingClient: chunkingClient,
 	}
 
 	return worker, nil

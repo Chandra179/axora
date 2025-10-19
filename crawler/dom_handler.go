@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly/v2"
@@ -65,6 +66,7 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 		if !isMetaRelevant {
 			return
 		}
+
 		result, err := w.CleanHTML(r.Body, url)
 		if err != nil {
 			w.logger.Error("failed to clean HTML",
@@ -72,17 +74,44 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 				zap.Error(err))
 			return
 		}
-		w.crawlVector.InsertOne(context.Background(), &CrawlVectorDoc{
-			URL:     url,
-			Content: result.TextContent[:200],
-		})
+
 		w.logger.Info("result",
 			zap.String("url", url),
 			zap.String("sitename", result.SiteName),
-			zap.String("text", result.TextContent),
 			zap.String("title", result.Title),
 			zap.String("excerpt", result.Excerpt),
 		)
+
+		chunks, err := w.chunkingClient.ChunkText(result.TextContent)
+		if err != nil {
+			w.logger.Error("failed to chunk text",
+				zap.String("url", url),
+				zap.Error(err))
+			return
+		}
+
+		for i, chunk := range chunks {
+			err := w.crawlVector.InsertOne(context.Background(), &CrawlVectorDoc{
+				URL:              url,
+				Content:          chunk.Text,
+				ContentEmbedding: chunk.Vector,
+				CrawledAt:        time.Now(),
+			})
+			if err != nil {
+				w.logger.Error("failed to insert chunk",
+					zap.String("url", url),
+					zap.Int("chunk_index", i),
+					zap.Error(err))
+				continue
+			}
+
+			w.logger.Info("inserted chunk",
+				zap.String("url", url),
+				zap.Int("chunk_index", i),
+				zap.Int("chunk_length", len(chunk.Text)),
+				zap.Int("vector_dim", len(chunk.Vector)),
+			)
+		}
 	}
 }
 

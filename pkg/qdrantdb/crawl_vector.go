@@ -39,7 +39,7 @@ func (c *CrawlClient) CreateCrawlCollection(ctx context.Context) error {
 func (c *CrawlClient) InsertOne(ctx context.Context, doc *crawler.CrawlVectorDoc) error {
 	// Using content hash as PK, bcs QdrantDB only accepts UUID and num as PK
 	// so we need to convert the hash to UUID
-	hash := sha256.Sum256([]byte(doc.Content))
+	hash := sha256.Sum256([]byte(doc.Content[:200]))
 	hashBytes := hash[:16]
 	namespace := uuid.MustParse("123e4567-e89b-12d3-a456-426614174000")
 	id := uuid.NewSHA1(namespace, hashBytes).String()
