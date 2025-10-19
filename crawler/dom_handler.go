@@ -60,10 +60,8 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 		topic := "economy"
 
 		isMetaRelevant := isMetaRelevant(doc, topic)
-		title := doc.Find("title").Text()
-		titleRelevant := isTopicRelevant(title, topic)
 
-		if !isMetaRelevant || !titleRelevant {
+		if !isMetaRelevant {
 			return
 		}
 		result, err := w.CleanHTML(r.Body, url)
@@ -117,7 +115,6 @@ func isTopicRelevant(text, topic string) bool {
 		}
 		stem := stemWord(w)
 
-		// Calculate the minimum length between the two stems
 		compareLen := minPrefixLen
 		if len(stem) < compareLen {
 			compareLen = len(stem)
@@ -126,7 +123,6 @@ func isTopicRelevant(text, topic string) bool {
 			compareLen = len(topicStem)
 		}
 
-		// Match if stems share a common prefix
 		if compareLen > 0 && compareLen >= minPrefixLen && stem[:compareLen] == topicStem[:compareLen] {
 			return true
 		}
@@ -136,6 +132,7 @@ func isTopicRelevant(text, topic string) bool {
 
 func isMetaRelevant(doc *goquery.Document, topic string) bool {
 	var isRelevant bool
+	meta := doc.Find("title").Text()
 
 	metas := doc.Find("meta")
 	for i := 0; i < metas.Length(); i++ {
@@ -144,7 +141,7 @@ func isMetaRelevant(doc *goquery.Document, topic string) bool {
 		prop, _ := s.Attr("property")
 		content, _ := s.Attr("content")
 
-		if isTopicRelevant(name+prop+content, topic) {
+		if isTopicRelevant(meta+name+prop+content, topic) {
 			isRelevant = true
 			break
 		}
