@@ -59,8 +59,6 @@ func NewCrawler(
 	httpClient *http.Client,
 	httpTransport *http.Transport,
 	logger *zap.Logger,
-	crawlDoc CrawlDocClient,
-	crawlEvent CrawlEvent,
 	crawlVector CrawlVectorRepo,
 	domains []string,
 ) (*Crawler, error) {
@@ -99,8 +97,6 @@ func NewCrawler(
 		logger:      logger,
 		httpClient:  *httpClient,
 		proxyUrl:    proxyUrl,
-		crawlDoc:    crawlDoc,
-		crawlEvent:  crawlEvent,
 		crawlVector: crawlVector,
 	}
 

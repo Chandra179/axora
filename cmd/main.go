@@ -5,18 +5,12 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"os"
-	"os/signal"
-	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"axora/config"
 	"axora/crawler"
-	"axora/pkg/kafka"
-	"axora/pkg/postgres"
 	qdrantClient "axora/pkg/qdrantdb"
 
 	"go.uber.org/zap"
@@ -52,20 +46,6 @@ func main() {
 	httpClient, httpTransport := NewHttpClient(cfg.ProxyURL)
 
 	// =========
-	// Postgres
-	// =========
-	pg, err := postgres.NewClient(cfg.PostgresDBUrl)
-	if err != nil {
-		logger.Fatal("failed to create postgres client", zap.Error(err))
-	}
-	// =========
-	// Kafka
-	// =========
-	kafkaClient, err := kafka.NewClient(cfg.KafkaURL)
-	if err != nil {
-		logger.Fatal("failed to create nats client", zap.Error(err))
-	}
-	// =========
 	// Qdrant vector
 	// =========
 	qdb, err := qdrantClient.NewClient(cfg.QdrantHost, cfg.QdrantPort)
@@ -85,8 +65,6 @@ func main() {
 		httpClient,
 		httpTransport,
 		logger,
-		pg,
-		kafkaClient,
 		qdb,
 		domains,
 	)
@@ -95,22 +73,10 @@ func main() {
 	}
 
 	// =========
-	// Download manager
-	// =========
-	downloadManager, err := crawler.NewDownloadManager(cfg.DownloadPath, pg, logger, httpClient)
-	if err != nil {
-		logger.Fatal("failed to create download manager", zap.Error(err))
-	}
-
-	if err := downloadManager.Start(); err != nil {
-		logger.Fatal("failed to start download manager", zap.Error(err))
-	}
-	ch := make(chan string)
-	var wg sync.WaitGroup
-
-	// =========
 	// HTTP handler func
 	// =========
+	ch := make(chan string)
+	var wg sync.WaitGroup
 	seedh := func(w http.ResponseWriter, r *http.Request) {
 		wg.Add(1)
 		go func() {
@@ -164,24 +130,6 @@ func main() {
 
 	http.HandleFunc("/seed", seedh)
 	http.HandleFunc("/browse", browseh)
-
-	serverErrors := make(chan error, 1)
-	go func() {
-		logger.Info("starting server", zap.Int("port", cfg.AppPort))
-		serverErrors <- http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil)
-	}()
-
-	shutdown := make(chan os.Signal, 1)
-	signal.Notify(shutdown, os.Interrupt, syscall.SIGTERM)
-
-	select {
-	case err := <-serverErrors:
-		logger.Fatal("server error", zap.Error(err))
-	case sig := <-shutdown:
-		logger.Info("shutdown signal received", zap.String("signal", sig.String()))
-		downloadManager.Stop()
-		logger.Info("shutdown complete")
-	}
 }
 
 func NewHttpClient(proxyUrl string) (*http.Client, *http.Transport) {
