@@ -46,10 +46,7 @@ func NewSentenceChunker(maxTokens int, embed embedding.Client) (*SentenceChunker
 }
 
 func (sc *SentenceChunker) ChunkText(text string) ([]ChunkOutput, error) {
-	fmt.Println(sc.sentenceTokenizer == nil)
-	fmt.Println(text == "")
 	sentenceObjs := sc.sentenceTokenizer.Tokenize(text)
-	fmt.Println(sentenceObjs == nil)
 
 	if len(sentenceObjs) == 0 {
 		return nil, nil
@@ -70,6 +67,10 @@ func (sc *SentenceChunker) ChunkText(text string) ([]ChunkOutput, error) {
 			chunks = append(chunks, currentChunk)
 			currentChunk = sentence
 			currentTokens = sentenceTokenCount
+		} else if sentenceTokenCount > sc.maxTokens {
+			// Handle case where a single sentence exceeds max tokens
+			// Split it further or skip it with a warning
+			continue
 		} else {
 			currentChunk += sentence
 			currentTokens += sentenceTokenCount
