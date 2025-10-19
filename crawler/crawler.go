@@ -25,6 +25,17 @@ type CrawlEvent interface {
 	Publish(subject string, msg []byte) error
 }
 
+type CrawlVectorRepo interface {
+	InsertOne(ctx context.Context, doc *CrawlVectorDoc) error
+}
+
+type CrawlVectorDoc struct {
+	URL              string    `json:"url"`
+	Content          string    `json:"content"`
+	ContentEmbedding []float32 `json:"content_embedding"`
+	CrawledAt        time.Time `json:"crawledAt"`
+}
+
 type ContextKey string
 
 const (
@@ -34,12 +45,13 @@ const (
 )
 
 type Crawler struct {
-	collector  *colly.Collector
-	logger     *zap.Logger
-	httpClient http.Client
-	proxyUrl   string
-	crawlDoc   CrawlDocClient
-	crawlEvent CrawlEvent
+	collector   *colly.Collector
+	logger      *zap.Logger
+	httpClient  http.Client
+	proxyUrl    string
+	crawlDoc    CrawlDocClient
+	crawlEvent  CrawlEvent
+	crawlVector CrawlVectorRepo
 }
 
 func NewCrawler(
@@ -49,6 +61,7 @@ func NewCrawler(
 	logger *zap.Logger,
 	crawlDoc CrawlDocClient,
 	crawlEvent CrawlEvent,
+	crawlVector CrawlVectorRepo,
 	domains []string,
 ) (*Crawler, error) {
 	c := colly.NewCollector(
@@ -82,12 +95,13 @@ func NewCrawler(
 	c.IgnoreRobotsTxt = true
 
 	worker := &Crawler{
-		collector:  c,
-		logger:     logger,
-		httpClient: *httpClient,
-		proxyUrl:   proxyUrl,
-		crawlDoc:   crawlDoc,
-		crawlEvent: crawlEvent,
+		collector:   c,
+		logger:      logger,
+		httpClient:  *httpClient,
+		proxyUrl:    proxyUrl,
+		crawlDoc:    crawlDoc,
+		crawlEvent:  crawlEvent,
+		crawlVector: crawlVector,
 	}
 
 	return worker, nil

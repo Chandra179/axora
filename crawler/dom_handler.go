@@ -2,6 +2,7 @@ package crawler
 
 import (
 	"bytes"
+	"context"
 	"net/url"
 	"regexp"
 	"strings"
@@ -71,6 +72,10 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 				zap.Error(err))
 			return
 		}
+		w.crawlVector.InsertOne(context.Background(), &CrawlVectorDoc{
+			URL:     url,
+			Content: result.TextContent[:200],
+		})
 		w.logger.Info("result",
 			zap.String("url", url),
 			zap.String("sitename", result.SiteName),

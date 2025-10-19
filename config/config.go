@@ -14,10 +14,16 @@ type Config struct {
 	PostgresDBUrl string
 	DownloadPath  string
 	KafkaURL      string
+	QdrantHost    string
+	QdrantPort    int
 }
 
 func Load() (*Config, error) {
 	appPort, err := strconv.Atoi(getEnv("APP_PORT"))
+	if err != nil {
+		return nil, err
+	}
+	qdrantPort, err := strconv.Atoi(getEnv("QDRANT_GRPC_PORT"))
 	if err != nil {
 		return nil, err
 	}
@@ -28,6 +34,8 @@ func Load() (*Config, error) {
 		DownloadPath:  getEnv("DOWNLOAD_PATH"),
 		PostgresDBUrl: getEnv("POSTGRES_DB_URL"),
 		KafkaURL:      getEnv("KAFKA_URL"),
+		QdrantPort:    qdrantPort,
+		QdrantHost:    getEnv("QDRANT_HOST"),
 	}, nil
 }
 

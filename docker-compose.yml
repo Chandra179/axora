@@ -14,6 +14,9 @@ services:
       DOWNLOAD_PATH: /app/downloads
       DOCKER_BUILDKIT: 1
       KAFKA_URL: axora-kafka:9092
+      QDRANT_HTTP_PORT: 6333
+      QDRANT_GRPC_PORT: 6334
+      QDRANT_HOST: axora-qdrant
     ports:
       - "8080:8080"
     networks:
