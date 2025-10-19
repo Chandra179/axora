@@ -23,11 +23,11 @@ services:
     volumes:
       - ./downloads:/app/downloads
       - ./domains.yaml:/app/domains.yaml
-    # depends_on:
-      # axora-tor-proxy:
-      #   condition: service_started
-      # axora-mpnetbasev2:
-      #   condition: service_healthy
+    depends_on:
+      axora-tor-proxy:
+        condition: service_started
+      axora-mpnetbasev2:
+        condition: service_healthy
     deploy:
       resources:
         limits:

@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -145,6 +146,7 @@ func main() {
 
 	http.HandleFunc("/seed", seedh)
 	http.HandleFunc("/browse", browseh)
+	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil))
 }
 
 func NewHttpClient(proxyUrl string) (*http.Client, *http.Transport) {

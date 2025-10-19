@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/neurosnap/sentences"
+	"github.com/neurosnap/sentences/english"
 	"github.com/pkoukk/tiktoken-go"
 )
 
@@ -31,7 +32,10 @@ func NewSentenceChunker(maxTokens int, embed embedding.Client) (*SentenceChunker
 		return nil, fmt.Errorf("failed to get tiktoken encoding: %w", err)
 	}
 
-	sentenceTokenizer := sentences.NewSentenceTokenizer(nil)
+	sentenceTokenizer, err := english.NewSentenceTokenizer(nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get sentence tokenizer: %w", err)
+	}
 
 	return &SentenceChunker{
 		tokenizer:         tokenizer,
@@ -42,7 +46,10 @@ func NewSentenceChunker(maxTokens int, embed embedding.Client) (*SentenceChunker
 }
 
 func (sc *SentenceChunker) ChunkText(text string) ([]ChunkOutput, error) {
+	fmt.Println(sc.sentenceTokenizer == nil)
+	fmt.Println(text == "")
 	sentenceObjs := sc.sentenceTokenizer.Tokenize(text)
+	fmt.Println(sentenceObjs == nil)
 
 	if len(sentenceObjs) == 0 {
 		return nil, nil
