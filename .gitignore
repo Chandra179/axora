@@ -41,3 +41,5 @@ env
 *.cbr
 *.pdf
 *.epub
+venv/
+__pycache__

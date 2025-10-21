@@ -5,3 +5,12 @@
 curl -X POST http://localhost:8000/embed \
   -H "Content-Type: application/json" \
   -d '{"inputs": "what is the equilibrium?"}'
+
+curl -X POST "http://localhost:6333/collections/crawl_collection/points/search" \
+     -H "Content-Type: application/json" \
+     -d '{
+           "vector": [],
+           "limit": 5,
+           "with_payload": true,
+           "with_vector": false
+         }'

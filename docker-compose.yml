@@ -96,6 +96,67 @@ services:
     networks:
       - axora-network
 
+  axora-ollama:
+    image: ollama/ollama:latest
+    container_name: axora-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_storage:/root/.ollama
+    networks:
+      - axora-network
+    environment:
+      - OLLAMA_MAX_LOADED_MODELS=1
+      - OLLAMA_NUM_PARALLEL=1
+      - OLLAMA_MAX_BATCH=2
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 12G 
+        reservations:
+          cpus: '2.0'
+          memory: 8G 
+  
+  axora-ollama-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    container_name: axora-ollama-webui
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://axora-ollama:11434
+    networks:
+      - axora-network
+    depends_on:
+      - axora-ollama
+    volumes:
+      - ollama_webui:/app/backend/data
+
+  axora-rag:
+    build:
+      context: ./rag
+      dockerfile: Dockerfile.pithon
+    container_name: axora-rag
+    environment:
+      - QDRANT_HOST=axora-qdrant
+      - QDRANT_PORT=6333
+      - QDRANT_COLLECTION=crawl_collection
+      - EMBEDDING_API_URL=http://axora-mpnetbasev2:8000
+      - OLLAMA_HOST=http://axora-ollama:11434
+      - OLLAMA_MODEL=mistral:7b-instruct-q4_0
+    ports:
+      - "8001:8001"
+    networks:
+      - axora-network
+    volumes:
+      - ./rag:/app
+    depends_on:
+      axora-qdrant:
+        condition: service_started
+      axora-mpnetbasev2:
+        condition: service_healthy
+    command: python main.py
+
 networks:
   axora-network:
     driver: bridge
@@ -103,3 +164,5 @@ networks:
 volumes:
   qdrant_storage:
   axora-mpnetbasev2-cache:
+  ollama_storage:
+  ollama_webui:
