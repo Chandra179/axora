@@ -5,7 +5,6 @@ from qdrant_client import QdrantClient
 from langchain_qdrant import QdrantVectorStore
 from langchain_core.embeddings import Embeddings
 
-
 class TEIEmbeddings(Embeddings):
     """Custom embeddings class for HuggingFace Text Embeddings Inference API"""
     

@@ -1,15 +1,12 @@
-from rag_pipe import simple_rag_query
+from rag_pipe import get_rag_chain
 
 if __name__ == "__main__":
     print("\n" + "=" * 60)
     print("RAG Demo - Example 1")
     print("=" * 60)
 
-    print("\n### Example 1: Simple Similarity Search")
-    simple_rag_query(
-        question="What is artificial intelligence?",
-        search_type="similarity",
-        k=3
-    )
+    rag_chain = get_rag_chain()
+    answer = rag_chain.invoke("what is economy")
+    print(answer)
 
     print("\n✅ Example completed!")

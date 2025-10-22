@@ -13,5 +13,6 @@ conccurent web crawling system designed for concurrent, privacy-focused content 
 ```
 pip install pipreqs
 pipreqs ./ --force --savepath=./extractor/requirements.txt
+pipreqs ./rag --force --savepath=./rag/requirements.txt
 
 ```
