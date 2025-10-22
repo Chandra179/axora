@@ -13,23 +13,37 @@ class TEIEmbeddings(Embeddings):
         
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """Embed a list of documents"""
-        response = requests.post(
-            f"{self.api_url}/embed",
-            json={"inputs": texts},
-            timeout=30
-        )
-        response.raise_for_status()
-        return response.json()
+        try:
+            response = requests.post(
+                f"{self.api_url}/embed",
+                json={"inputs": texts},
+                timeout=30
+            )
+            response.raise_for_status()
+            embeddings = response.json()
+            print(f"✓ Embedded {len(texts)} documents successfully")
+            return embeddings
+        except Exception as e:
+            print(f"✗ Error embedding documents: {e}")
+            raise
     
     def embed_query(self, text: str) -> List[float]:
         """Embed a single query"""
-        response = requests.post(
-            f"{self.api_url}/embed",
-            json={"inputs": text},
-            timeout=30
-        )
-        response.raise_for_status()
-        return response.json()[0]
+        try:
+            response = requests.post(
+                f"{self.api_url}/embed",
+                json={"inputs": [text]},  # Changed: wrap in list for consistency
+                timeout=30
+            )
+            response.raise_for_status()
+            result = response.json()
+            # Handle both single embedding and list of embeddings
+            embedding = result[0] if isinstance(result, list) else result
+            print(f"✓ Embedded query successfully (dim: {len(embedding)})")
+            return embedding
+        except Exception as e:
+            print(f"✗ Error embedding query: {e}")
+            raise
 
 def get_vector_store():
     """Initialize and return Qdrant vector store with custom embeddings"""
@@ -40,8 +54,20 @@ def get_vector_store():
     collection_name = os.getenv('QDRANT_COLLECTION', 'crawl_collection')
     embedding_url = os.getenv('EMBEDDING_API_URL', 'http://axora-mpnetbasev2:8000')
     
+    print(f"Connecting to Qdrant: {qdrant_host}:{qdrant_port}")
+    print(f"Collection: {collection_name}")
+    print(f"Embedding API: {embedding_url}")
+    
     # Initialize Qdrant client
     client = QdrantClient(host=qdrant_host, port=qdrant_port)
+    
+    # Verify collection exists and check count
+    try:
+        collection_info = client.get_collection(collection_name)
+        print(f"✓ Collection exists with {collection_info.points_count} points")
+    except Exception as e:
+        print(f"✗ Error accessing collection: {e}")
+        raise
     
     # Initialize custom embeddings
     embeddings = TEIEmbeddings(api_url=embedding_url)
@@ -73,7 +99,10 @@ def get_retriever(search_type="similarity", search_kwargs=None):
     """
     
     if search_kwargs is None:
+        # Removed score threshold to retrieve all results regardless of score
         search_kwargs = {"k": 4}
+    
+    print(f"\nInitializing retriever with search_type='{search_type}' and kwargs={search_kwargs}")
     
     vector_store = get_vector_store()
     

@@ -56,8 +56,8 @@ func (c *CrawlClient) InsertOne(ctx context.Context, doc *crawler.CrawlVectorDoc
 	}
 
 	md := map[string]any{
-		"url":     doc.URL,
-		"content": doc.Content,
+		"url":          doc.URL,
+		"page_content": doc.Content,
 	}
 	point := &qdrant.PointStruct{
 		Id:      qdrant.NewID(id),
