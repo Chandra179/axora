@@ -14,7 +14,7 @@ def format_docs(docs):
 def get_llm():
     """Initialize and return Ollama LLM"""
     ollama_host = os.getenv('OLLAMA_HOST', 'http://axora-ollama:11434')
-    ollama_model = os.getenv('OLLAMA_MODEL', 'mistral:7b-instruct-q4_0')
+    ollama_model = os.getenv('OLLAMA_MODEL', 'phi3:mini')
     
     llm = OllamaLLM(
         base_url=ollama_host,

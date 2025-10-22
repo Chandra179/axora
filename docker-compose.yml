@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     container_name: axora-crawler
     environment:
-      APP_PORT: 8080
+      APP_PORT: 8002
       PROXY_URL: http://axora-tor-proxy:3128
       DOWNLOAD_PATH: /app/downloads
       DOCKER_BUILDKIT: 1
@@ -17,7 +17,7 @@ services:
       QDRANT_HOST: axora-qdrant
       MPNET_BASEV2_URL: http://axora-mpnetbasev2:8000
     ports:
-      - "8080:8080"
+      - "8002:8002"
     networks:
       - axora-network
     volumes:
@@ -31,11 +31,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '3.0'
-          memory: 3G
-        reservations:
-          cpus: '1.0' 
+          cpus: '2.0'
           memory: 1G
+        reservations:
+          cpus: '0.5' 
+          memory: 512M
 
   axora-tor-proxy:
     image: zhaowde/rotating-tor-http-proxy
@@ -48,6 +48,14 @@ services:
       TOR_EXIT_COUNTRY: jp,tw,th,id,sg
     networks:
       - axora-network
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
   
   axora-mpnetbasev2:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
@@ -55,9 +63,9 @@ services:
     environment:
       - MODEL_ID=sentence-transformers/all-mpnet-base-v2
       - PORT=8000
-      - MAX_CONCURRENT_REQUESTS=100
-      - MAX_BATCH_TOKENS=4096
-      - MAX_BATCH_REQUESTS=64
+      - MAX_CONCURRENT_REQUESTS=50  
+      - MAX_BATCH_TOKENS=2048
+      - MAX_BATCH_REQUESTS=32
       - NUM_SHARD=1
       - CUDA_VISIBLE_DEVICES=""
       - HUGGING_FACE_HUB_TOKEN=""
@@ -70,11 +78,11 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '2.0'
-          memory: 2G
+          cpus: '1.5'
+          memory: 1.5G
         reservations:
           cpus: '0.5'
-          memory: 512M
+          memory: 1G
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -95,42 +103,14 @@ services:
       - QDRANT__SERVICE__GRPC_PORT=6334
     networks:
       - axora-network
-
-  axora-ollama:
-    image: ollama/ollama:latest
-    container_name: axora-ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_storage:/root/.ollama
-    networks:
-      - axora-network
-    environment:
-      - OLLAMA_MAX_LOADED_MODELS=1
-      - OLLAMA_NUM_PARALLEL=1
-      - OLLAMA_MAX_BATCH=2
     deploy:
       resources:
         limits:
-          cpus: '4.0'
-          memory: 12G 
+          cpus: '1.0'
+          memory: 1G
         reservations:
-          cpus: '2.0'
-          memory: 8G 
-  
-  axora-ollama-webui:
-    image: ghcr.io/open-webui/open-webui:main
-    container_name: axora-ollama-webui
-    ports:
-      - "3000:8080"
-    environment:
-      - OLLAMA_BASE_URL=http://axora-ollama:11434
-    networks:
-      - axora-network
-    depends_on:
-      - axora-ollama
-    volumes:
-      - ollama_webui:/app/backend/data
+          cpus: '0.25'
+          memory: 512M
 
   axora-rag:
     build:
@@ -142,8 +122,8 @@ services:
       - QDRANT_PORT=6333
       - QDRANT_COLLECTION=crawl_collection
       - EMBEDDING_API_URL=http://axora-mpnetbasev2:8000
-      - OLLAMA_HOST=http://axora-ollama:11434
-      - OLLAMA_MODEL=mistral:7b-instruct-q4_0
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      - OLLAMA_MODEL=phi3:mini
     ports:
       - "8001:8001"
     networks:
@@ -156,6 +136,14 @@ services:
       axora-mpnetbasev2:
         condition: service_healthy
     command: python main.py
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 256M
 
 networks:
   axora-network:
