@@ -1,7 +1,0 @@
-langchain
-langchain-community
-langchain-core
-langchain-ollama
-langchain_qdrant
-qdrant_client
-Requests

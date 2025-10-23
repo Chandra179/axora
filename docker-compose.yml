@@ -114,39 +114,6 @@ services:
           cpus: '0.25'
           memory: 512M
 
-  axora-rag:
-    build:
-      context: ./rag
-      dockerfile: Dockerfile.pithon
-    container_name: axora-rag
-    environment:
-      - QDRANT_HOST=axora-qdrant
-      - QDRANT_PORT=6333
-      - QDRANT_COLLECTION=crawl_collection
-      - EMBEDDING_API_URL=http://axora-mpnetbasev2:8000
-      - OLLAMA_HOST=http://host.docker.internal:11434
-      - OLLAMA_MODEL=phi3:mini
-    ports:
-      - "8001:8001"
-    networks:
-      - axora-network
-    volumes:
-      - ./rag:/app
-    depends_on:
-      axora-qdrant:
-        condition: service_started
-      axora-mpnetbasev2:
-        condition: service_healthy
-    command: python main.py
-    deploy:
-      resources:
-        limits:
-          cpus: '1.0'
-          memory: 512M
-        reservations:
-          cpus: '0.25'
-          memory: 256M
-
 networks:
   axora-network:
     driver: bridge
@@ -154,5 +121,3 @@ networks:
 volumes:
   qdrant_storage:
   axora-mpnetbasev2-cache:
-  ollama_storage:
-  ollama_webui:

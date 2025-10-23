@@ -41,6 +41,4 @@ env
 *.cbr
 *.pdf
 *.epub
-venv/
-__pycache__
 .webui_secret_key
