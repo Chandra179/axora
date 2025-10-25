@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (w *Crawler) CleanHTML(body []byte, pageURL string) (*readability.Article, error) {
+func (w *Crawler) ExtractText(body []byte, pageURL string) (*readability.Article, error) {
 	reader := bytes.NewReader(body)
 
 	parsedURL, err := url.Parse(pageURL)

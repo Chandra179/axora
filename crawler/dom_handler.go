@@ -67,11 +67,14 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 			return
 		}
 
-		result, err := w.CleanHTML(r.Body, url)
+		result, err := w.ExtractText(r.Body, url)
 		if err != nil {
 			w.logger.Error("failed to clean HTML",
 				zap.String("url", url),
 				zap.Error(err))
+			return
+		}
+		if result == nil {
 			return
 		}
 
@@ -80,6 +83,7 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 			zap.String("sitename", result.SiteName),
 			zap.String("title", result.Title),
 			zap.String("excerpt", result.Excerpt),
+			zap.String("text", result.TextContent),
 		)
 
 		chunks, err := w.chunkingClient.ChunkText(result.TextContent)
