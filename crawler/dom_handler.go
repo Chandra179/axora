@@ -67,26 +67,24 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 			return
 		}
 
-		result, err := w.ExtractText(r.Body, url)
+		content, err := w.ExtractText(r.Body, url)
 		if err != nil {
 			w.logger.Error("failed to clean HTML",
 				zap.String("url", url),
 				zap.Error(err))
 			return
 		}
-		if result == nil {
+		if content == nil {
 			return
 		}
 
 		w.logger.Info("result",
 			zap.String("url", url),
-			zap.String("sitename", result.SiteName),
-			zap.String("title", result.Title),
-			zap.String("excerpt", result.Excerpt),
-			zap.String("text", result.TextContent),
+			zap.String("sitename", content.Metadata.SiteName),
+			zap.String("title", content.Metadata.Title),
 		)
 
-		chunks, err := w.chunkingClient.ChunkText(result.TextContent)
+		chunks, err := w.chunkingClient.ChunkText(content.HtmlNode)
 		if err != nil {
 			w.logger.Error("failed to chunk text",
 				zap.String("url", url),
