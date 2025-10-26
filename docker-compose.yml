@@ -16,8 +16,6 @@ services:
       QDRANT_GRPC_PORT: 6334
       QDRANT_HOST: axora-qdrant
       MPNET_BASEV2_URL: http://axora-mpnetbasev2:8000
-      OLLAMA_HOST: http://host.docker.internal:11434
-      OLLAMA_MODEL: phi3:mini
     ports:
       - "8002:8002"
     networks:

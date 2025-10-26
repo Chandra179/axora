@@ -17,6 +17,7 @@ import (
 type Content struct {
 	HtmlNode    string
 	TextContent string
+	TextMd      string
 	Metadata    *ContentMetadata
 }
 
@@ -96,7 +97,9 @@ func (w *Crawler) ExtractWithTrafilatura(body []byte, pageURL string) (*Content,
 
 	return &Content{
 		HtmlNode:    htmlStr,
-		TextContent: textContent, Metadata: metadata}, nil
+		TextContent: textContent,
+		Metadata:    metadata,
+	}, nil
 }
 
 func (w *Crawler) ExtractWithReadability(body []byte, pageURL string) (string, error) {
@@ -165,7 +168,7 @@ func (w *Crawler) ExtractText(body []byte, pageURL string) (*Content, error) {
 	sentenceScoreVal := sentenceScore(sentenceCount, avgSentenceLength)
 
 	finalScore := qualityScore(lengthScoreVal, richnessScoreVal, sentenceScoreVal)
-	if finalScore < 6.7 {
+	if finalScore < 67 {
 		return nil, nil
 	}
 
@@ -184,6 +187,7 @@ func (w *Crawler) ExtractText(body []byte, pageURL string) (*Content, error) {
 	if err != nil {
 		return nil, err
 	}
+	content.TextMd = textMd
 	w.logger.Info("text_md", zap.String("text", textMd))
 
 	return content, nil

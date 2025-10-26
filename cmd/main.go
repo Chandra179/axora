@@ -67,7 +67,7 @@ func main() {
 	// =========
 	// Chunking Client
 	// =========
-	chunkingClient, err := crawler.NewSentenceChunker(400, embeddingClient) // 512 token limit
+	chunkingClient, err := crawler.NewChunker(420, embeddingClient) // 512 token limit
 	if err != nil {
 		log.Fatalf("Failed to initialize chunking client: %v", err)
 	}
