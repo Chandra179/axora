@@ -42,6 +42,7 @@ type Crawler struct {
 	crawlVector    CrawlVectorRepo
 	chunkingClient ChunkingClient
 	chunkMethod    string
+	topic          string
 }
 
 func NewCrawler(
@@ -95,12 +96,13 @@ func NewCrawler(
 	return worker, nil
 }
 
-func (w *Crawler) Crawl(urls chan string, chunkMethod string) error {
+func (w *Crawler) Crawl(urls chan string, chunkMethod string, topic string) error {
 	w.collector.OnHTML("a[href]", w.OnHTML())
 	// w.collector.OnHTML("body", w.OnHTMLDOMLog(ctx))
 	w.collector.OnError(w.OnError(w.collector))
 	w.collector.OnResponse(w.OnResponse())
 	w.chunkMethod = chunkMethod
+	w.topic = topic
 
 	for url := range urls {
 		if err := w.collector.Visit(url); err != nil {

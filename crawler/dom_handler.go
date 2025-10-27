@@ -59,10 +59,7 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 			return
 		}
 
-		topic := "economy"
-
-		isMetaRelevant := isMetaRelevant(doc, topic)
-
+		isMetaRelevant := isMetaRelevant(doc, w.topic)
 		if !isMetaRelevant {
 			return
 		}

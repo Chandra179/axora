@@ -20,6 +20,7 @@ import (
 )
 
 type SeedRequest struct {
+	Topic          string `json:"topic"`
 	ChunkingMethod string `json:"chunking_method"`
 }
 
@@ -125,7 +126,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := crawlerInstance.Crawl(ch, req.ChunkingMethod)
+			err := crawlerInstance.Crawl(ch, req.ChunkingMethod, req.Topic)
 			if err != nil {
 				logger.Info("err crawl: " + err.Error())
 			}
@@ -167,7 +168,7 @@ func main() {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := crawlerInstance.Crawl(ch, req.ChunkingMethod)
+			err := crawlerInstance.Crawl(ch, req.ChunkingMethod, req.Topic)
 			if err != nil {
 				logger.Info("err crawl: " + err.Error())
 			}
