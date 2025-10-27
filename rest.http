@@ -1,6 +1,6 @@
-# GET http://localhost:8080/browse?q=economy
+# POST http://localhost:8080/browse?t=economy?m=md
 
-GET http://localhost:8002/seed
+POST http://localhost:8002/seed?m=md?t=economy
 
 curl -X POST http://localhost:8000/embed \
   -H "Content-Type: application/json" \

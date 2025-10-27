@@ -23,6 +23,7 @@ type ChunkingClient interface {
 type Chunker struct {
 	tokenizer       *tokenizers.Tokenizer
 	maxTokens       int
+	minTokens       int
 	embeddingClient embedding.Client
 	maxBatchSize    int
 	logger          *zap.Logger
@@ -40,6 +41,7 @@ func NewChunker(maxTokens int, embed embedding.Client, logger *zap.Logger,
 		embeddingClient: embed,
 		maxBatchSize:    32,
 		logger:          logger,
+		minTokens:       75,
 	}, nil
 }
 
@@ -94,6 +96,7 @@ func (sc *Chunker) ChunkText(text string, chunkType string) ([]ChunkOutput, erro
 func (sc *Chunker) chunkMarkdown(text string) ([]string, error) {
 	splitter := textsplitter.NewMarkdownTextSplitter(
 		textsplitter.WithHeadingHierarchy(true),
+		textsplitter.WithChunkOverlap(50),
 	)
 
 	c, err := splitter.SplitText(text)
@@ -107,6 +110,7 @@ func (sc *Chunker) chunkSentence(text string) ([]string, error) {
 	splitter := textsplitter.NewRecursiveCharacter(
 		textsplitter.WithSeparators([]string{"\n\n", "\n", ".", "!", "?", " ", ""}),
 		textsplitter.WithKeepSeparator(true),
+		textsplitter.WithChunkOverlap(50),
 	)
 
 	c, err := splitter.SplitText(text)
@@ -129,6 +133,9 @@ func (sc *Chunker) doChunk(chunks []string) ([]string, error) {
 		tokenCount := len(ids)
 		sc.logger.Info("token_count", zap.Int("count", tokenCount))
 
+		if tokenCount < 75 {
+			continue
+		}
 		if tokenCount <= sc.maxTokens {
 			validChunks = append(validChunks, trimmed)
 		} else {

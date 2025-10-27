@@ -41,6 +41,7 @@ type Crawler struct {
 	proxyUrl       string
 	crawlVector    CrawlVectorRepo
 	chunkingClient ChunkingClient
+	chunkMethod    string
 }
 
 func NewCrawler(
@@ -76,8 +77,8 @@ func NewCrawler(
 	c.SetRequestTimeout(5 * time.Minute)
 	c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 5,
-		Delay:       10 * time.Second,
+		Parallelism: 3,
+		Delay:       15 * time.Second,
 		RandomDelay: 3 * time.Second,
 	})
 	c.IgnoreRobotsTxt = true
@@ -94,11 +95,12 @@ func NewCrawler(
 	return worker, nil
 }
 
-func (w *Crawler) Crawl(urls chan string) error {
+func (w *Crawler) Crawl(urls chan string, chunkMethod string) error {
 	w.collector.OnHTML("a[href]", w.OnHTML())
 	// w.collector.OnHTML("body", w.OnHTMLDOMLog(ctx))
 	w.collector.OnError(w.OnError(w.collector))
 	w.collector.OnResponse(w.OnResponse())
+	w.chunkMethod = chunkMethod
 
 	for url := range urls {
 		if err := w.collector.Visit(url); err != nil {

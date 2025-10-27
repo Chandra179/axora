@@ -84,7 +84,7 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 			zap.String("title", content.Metadata.Title),
 		)
 
-		chunks, err := w.chunkingClient.ChunkText(content.TextMd, "md")
+		chunks, err := w.chunkingClient.ChunkText(content.TextMd, w.chunkMethod)
 		if err != nil {
 			w.logger.Error("failed to chunk text",
 				zap.String("url", url),

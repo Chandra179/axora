@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"net/url"
@@ -17,6 +18,15 @@ import (
 
 	"go.uber.org/zap"
 )
+
+type SeedRequest struct {
+	ChunkingMethod string `json:"chunking_method"`
+}
+
+type BrowseRequest struct {
+	Topic          string `json:"topic"`
+	ChunkingMethod string `json:"chunking_method"`
+}
 
 func main() {
 	// =========
@@ -95,10 +105,27 @@ func main() {
 	ch := make(chan string)
 	var wg sync.WaitGroup
 	seedh := func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req SeedRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer r.Body.Close()
+
+		if strings.TrimSpace(req.ChunkingMethod) == "" {
+			http.Error(w, "missing chunking_method parameter", http.StatusBadRequest)
+			return
+		}
+
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := crawlerInstance.Crawl(ch)
+			err := crawlerInstance.Crawl(ch, req.ChunkingMethod)
 			if err != nil {
 				logger.Info("err crawl: " + err.Error())
 			}
@@ -116,25 +143,37 @@ func main() {
 	}
 
 	browseh := func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query().Get("q")
-		if strings.TrimSpace(q) == "" {
-			http.Error(w, "missing q parameter", http.StatusBadRequest)
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		var req BrowseRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+		defer r.Body.Close()
+
+		if strings.TrimSpace(req.Topic) == "" {
+			http.Error(w, "missing topic parameter", http.StatusBadRequest)
+			return
+		}
+		if strings.TrimSpace(req.ChunkingMethod) == "" {
+			http.Error(w, "missing chunking_method parameter", http.StatusBadRequest)
 			return
 		}
 
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			err := crawlerInstance.Crawl(ch)
+			err := crawlerInstance.Crawl(ch, req.ChunkingMethod)
 			if err != nil {
 				logger.Info("err crawl: " + err.Error())
 			}
 		}()
 
-		browser.CollectUrls(q, ch)
-		if err != nil {
-			logger.Info("error colect urls: " + err.Error())
-		}
+		browser.CollectUrls(req.Topic, ch)
 
 		go func() {
 			wg.Wait()
