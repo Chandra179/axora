@@ -8,6 +8,19 @@ RUN wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | apt-key add
     && apt-get install -y google-chrome-stable \
     && rm -rf /var/lib/apt/lists/*
 
+# Install Rust (needed for building tokenizers)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+# Clone and build the tokenizers C library
+RUN git clone https://github.com/daulet/tokenizers.git /tmp/tokenizers \
+    && cd /tmp/tokenizers \
+    && make build \
+    && cp libtokenizers.a /usr/local/lib/ \
+    && cp tokenizers.h /usr/local/include/ \
+    && ldconfig \
+    && rm -rf /tmp/tokenizers
+
 # Copy Go modules and vendor
 COPY go.mod go.sum ./
 COPY vendor/ vendor/

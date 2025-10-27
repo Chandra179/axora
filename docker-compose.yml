@@ -16,6 +16,10 @@ services:
       QDRANT_GRPC_PORT: 6334
       QDRANT_HOST: axora-qdrant
       MPNET_BASEV2_URL: http://axora-mpnetbasev2:8000
+      DOMAIN_WHITELIST_PATH: /app/domains.yaml
+      MAX_EMBED_MODEL_TOKEN_SIZE: 480
+      EMBED_MODEL_ID: BAAI/bge-base-en-v1.5
+      TOKENIZER_FILE_PATH: /app/tokenizer.json
     ports:
       - "8002:8002"
     networks:
@@ -23,6 +27,7 @@ services:
     volumes:
       - ./downloads:/app/downloads
       - ./domains.yaml:/app/domains.yaml
+      - ./tokenizer.json:/app/tokenizer.json
     depends_on:
       axora-tor-proxy:
         condition: service_started

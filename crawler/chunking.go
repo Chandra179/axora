@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/neurosnap/sentences"
-	"github.com/neurosnap/sentences/english"
-	"github.com/pkoukk/tiktoken-go"
+	"github.com/daulet/tokenizers"
 	"github.com/tmc/langchaingo/textsplitter"
+	"go.uber.org/zap"
 )
 
 type ChunkOutput struct {
@@ -22,29 +21,25 @@ type ChunkingClient interface {
 }
 
 type Chunker struct {
-	tokenizer         *tiktoken.Tiktoken
-	sentenceTokenizer *sentences.DefaultSentenceTokenizer
-	maxTokens         int
-	embeddingClient   embedding.Client
-	maxBatchSize      int
+	tokenizer       *tokenizers.Tokenizer
+	maxTokens       int
+	embeddingClient embedding.Client
+	maxBatchSize    int
+	logger          *zap.Logger
 }
 
-func NewChunker(maxTokens int, embed embedding.Client) (*Chunker, error) {
-	tokenizer, err := tiktoken.GetEncoding("cl100k_base")
+func NewChunker(maxTokens int, embed embedding.Client, logger *zap.Logger,
+	tokenizerFilePath string) (*Chunker, error) {
+	tokenizer, err := tokenizers.FromFile(tokenizerFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get tiktoken encoding: %w", err)
-	}
-
-	sentenceTokenizer, err := english.NewSentenceTokenizer(nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get sentence tokenizer: %w", err)
+		return nil, fmt.Errorf("failed to load tokenizer from pretrained or local files: %w", err)
 	}
 	return &Chunker{
-		maxTokens:         maxTokens,
-		embeddingClient:   embed,
-		maxBatchSize:      32,
-		tokenizer:         tokenizer,
-		sentenceTokenizer: sentenceTokenizer,
+		tokenizer:       tokenizer,
+		maxTokens:       maxTokens,
+		embeddingClient: embed,
+		maxBatchSize:    32,
+		logger:          logger,
 	}, nil
 }
 
@@ -57,8 +52,6 @@ func (sc *Chunker) ChunkText(text string, chunkType string) ([]ChunkOutput, erro
 		chunks, err = sc.chunkMarkdown(text)
 	case "sen":
 		chunks, err = sc.chunkSentence(text)
-	case "sen2":
-		chunks, err = sc.chunkSentence2(text)
 	default:
 		return nil, fmt.Errorf("unsupported chunk type: %s", chunkType)
 	}
@@ -100,89 +93,48 @@ func (sc *Chunker) ChunkText(text string, chunkType string) ([]ChunkOutput, erro
 
 func (sc *Chunker) chunkMarkdown(text string) ([]string, error) {
 	splitter := textsplitter.NewMarkdownTextSplitter(
-		// textsplitter.WithHeadingHierarchy(true),
-		textsplitter.WithModelName("bge-base-en-v1.5"),
-		textsplitter.WithChunkSize(sc.maxTokens),
+		textsplitter.WithHeadingHierarchy(true),
 	)
 
-	chunks, err := splitter.SplitText(text)
+	c, err := splitter.SplitText(text)
 	if err != nil {
 		return nil, fmt.Errorf("failed to split markdown: %w", err)
 	}
-
-	// Filter out empty chunks
-	var validChunks []string
-	for _, chunk := range chunks {
-		trimmed := strings.TrimSpace(chunk)
-		if trimmed != "" {
-			validChunks = append(validChunks, trimmed)
-		}
-	}
-
-	return validChunks, nil
+	return sc.doChunk(c)
 }
 
 func (sc *Chunker) chunkSentence(text string) ([]string, error) {
 	splitter := textsplitter.NewRecursiveCharacter(
-		textsplitter.WithSeparators([]string{"\n\n", "\n", " ", "", "\n", ".\n", ".\n", "!\n", "?\n"}),
-		textsplitter.WithModelName("bge-base-en-v1.5"),
+		textsplitter.WithSeparators([]string{"\n\n", "\n", ".", "!", "?", " ", ""}),
 		textsplitter.WithKeepSeparator(true),
-		textsplitter.WithChunkSize(sc.maxTokens),
 	)
 
-	chunks, err := splitter.SplitText(text)
+	c, err := splitter.SplitText(text)
 	if err != nil {
-		return nil, fmt.Errorf("failed to split sentences: %w", err)
+		return nil, fmt.Errorf("failed to split text: %w", err)
 	}
 
-	// Filter out empty chunks
+	return sc.doChunk(c)
+}
+
+func (sc *Chunker) doChunk(chunks []string) ([]string, error) {
 	var validChunks []string
 	for _, chunk := range chunks {
 		trimmed := strings.TrimSpace(chunk)
-		if trimmed != "" {
+		if trimmed == "" {
+			continue
+		}
+
+		ids, _ := sc.tokenizer.Encode(trimmed, false)
+		tokenCount := len(ids)
+		sc.logger.Info("token_count", zap.Int("count", tokenCount))
+
+		if tokenCount <= sc.maxTokens {
 			validChunks = append(validChunks, trimmed)
+		} else {
+			// TODO: use something
 		}
 	}
 
 	return validChunks, nil
-}
-
-func (sc *Chunker) chunkSentence2(text string) ([]string, error) {
-	sentenceObjs := sc.sentenceTokenizer.Tokenize(text)
-
-	if len(sentenceObjs) == 0 {
-		return nil, nil
-	}
-
-	var chunks []string
-	var currentChunk string
-	var currentTokens int
-
-	for _, sentenceObj := range sentenceObjs {
-		sentence := sentenceObj.Text
-
-		tokens := sc.tokenizer.Encode(sentence, nil, nil)
-		sentenceTokenCount := len(tokens)
-
-		// If adding this sentence would exceed max tokens, save current chunk
-		if currentTokens+sentenceTokenCount > sc.maxTokens && currentChunk != "" {
-			chunks = append(chunks, currentChunk)
-			currentChunk = sentence
-			currentTokens = sentenceTokenCount
-		} else if sentenceTokenCount > sc.maxTokens {
-			// Handle case where a single sentence exceeds max tokens
-			// Split it further or skip it with a warning
-			continue
-		} else {
-			currentChunk += sentence
-			currentTokens += sentenceTokenCount
-		}
-	}
-
-	// Add the last chunk if it's not empty
-	if currentChunk != "" {
-		chunks = append(chunks, currentChunk)
-	}
-
-	return chunks, nil
 }

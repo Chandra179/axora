@@ -26,7 +26,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to load config: %v", err)
 	}
-	domains := config.LoadDomains("/app/domains.yaml")
+	domains := config.LoadDomains(cfg.DomainWhiteListPath)
 
 	// =========
 	// Logging
@@ -67,7 +67,8 @@ func main() {
 	// =========
 	// Chunking Client
 	// =========
-	chunkingClient, err := crawler.NewChunker(420, embeddingClient) // 512 token limit
+	chunkingClient, err := crawler.NewChunker(cfg.MaxEmbedModelTokenSize, embeddingClient,
+		logger, cfg.TokenizerFilePath)
 	if err != nil {
 		log.Fatalf("Failed to initialize chunking client: %v", err)
 	}

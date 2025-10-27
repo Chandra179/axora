@@ -9,12 +9,16 @@ import (
 )
 
 type Config struct {
-	AppPort        int
-	ProxyURL       string
-	DownloadPath   string
-	QdrantHost     string
-	QdrantPort     int
-	MpnetBaseV2Url string
+	ProxyURL               string
+	DownloadPath           string
+	QdrantHost             string
+	MpnetBaseV2Url         string
+	DomainWhiteListPath    string
+	EmbedModelID           string
+	TokenizerFilePath      string
+	QdrantPort             int
+	MaxEmbedModelTokenSize int
+	AppPort                int
 }
 
 func Load() (*Config, error) {
@@ -26,14 +30,22 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	tokenSize, err := strconv.Atoi(getEnv("MAX_EMBED_MODEL_TOKEN_SIZE"))
+	if err != nil {
+		return nil, err
+	}
 
 	return &Config{
-		AppPort:        appPort,
-		ProxyURL:       getEnv("PROXY_URL"),
-		DownloadPath:   getEnv("DOWNLOAD_PATH"),
-		QdrantPort:     qdrantPort,
-		QdrantHost:     getEnv("QDRANT_HOST"),
-		MpnetBaseV2Url: getEnv("MPNET_BASEV2_URL"),
+		ProxyURL:               getEnv("PROXY_URL"),
+		EmbedModelID:           getEnv("EMBED_MODEL_ID"),
+		DownloadPath:           getEnv("DOWNLOAD_PATH"),
+		QdrantHost:             getEnv("QDRANT_HOST"),
+		MpnetBaseV2Url:         getEnv("MPNET_BASEV2_URL"),
+		DomainWhiteListPath:    getEnv("DOMAIN_WHITELIST_PATH"),
+		TokenizerFilePath:      getEnv("TOKENIZER_FILE_PATH"),
+		MaxEmbedModelTokenSize: tokenSize,
+		QdrantPort:             qdrantPort,
+		AppPort:                appPort,
 	}, nil
 }
 
