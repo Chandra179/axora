@@ -22,6 +22,7 @@ services:
       TOKENIZER_FILE_PATH: /app/tokenizer.json
     ports:
       - "8002:8002"
+      - "6060:6060"   # expose pprof
     networks:
       - axora-network
     volumes:

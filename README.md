@@ -5,3 +5,12 @@ conccurent web crawling system designed for concurrent, privacy-focused content 
 ## Test
 ![HighLevelDiagram](img/test.png)
 
+## Profiling
+```
+http://localhost:6060/debug/pprof/
+
+go tool pprof http://localhost:6060/debug/pprof/allocs
+(pprof) top
+
+
+```

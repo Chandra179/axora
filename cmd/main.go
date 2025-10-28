@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"net/url"
 	"strconv"
 	"strings"
@@ -30,6 +31,13 @@ type BrowseRequest struct {
 }
 
 func main() {
+	// =========
+	// Profiling
+	// =========
+	go func() {
+		http.ListenAndServe(":6060", nil)
+	}()
+
 	// =========
 	// Config
 	// =========
