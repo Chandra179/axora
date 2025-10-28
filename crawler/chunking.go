@@ -17,7 +17,7 @@ type ChunkOutput struct {
 }
 
 type ChunkingClient interface {
-	ChunkText(text string, chunkType string) ([]ChunkOutput, error)
+	ChunkText(text string, chunkType string, ch chan<- ChunkOutput)
 }
 
 type Chunker struct {
@@ -45,7 +45,9 @@ func NewChunker(maxTokens int, embed embedding.Client, logger *zap.Logger,
 	}, nil
 }
 
-func (sc *Chunker) ChunkText(text string, chunkType string) ([]ChunkOutput, error) {
+func (sc *Chunker) ChunkText(text string, chunkType string, ch chan<- ChunkOutput) {
+	defer close(ch)
+
 	var chunks []string
 	var err error
 
@@ -55,18 +57,18 @@ func (sc *Chunker) ChunkText(text string, chunkType string) ([]ChunkOutput, erro
 	case "sen":
 		chunks, err = sc.chunkSentence(text)
 	default:
-		return nil, fmt.Errorf("unsupported chunk type: %s", chunkType)
+		sc.logger.Error("unsupported chunk type", zap.String("type", chunkType))
+		return
 	}
 
 	if err != nil {
-		return nil, err
+		sc.logger.Error("failed to chunk text", zap.Error(err))
+		return
 	}
 
 	if len(chunks) == 0 {
-		return nil, nil
+		return
 	}
-
-	var allEmbeddings [][]float32
 
 	for i := 0; i < len(chunks); i += sc.maxBatchSize {
 		end := i + sc.maxBatchSize
@@ -77,20 +79,20 @@ func (sc *Chunker) ChunkText(text string, chunkType string) ([]ChunkOutput, erro
 		batch := chunks[i:end]
 		embeddings, err := sc.embeddingClient.GetEmbeddings(context.Background(), batch)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get embeddings for batch %d-%d: %w", i, end, err)
+			sc.logger.Error("failed to get embeddings for batch",
+				zap.Int("start", i),
+				zap.Int("end", end),
+				zap.Error(err))
+			continue
 		}
-		allEmbeddings = append(allEmbeddings, embeddings...)
-	}
 
-	result := make([]ChunkOutput, len(chunks))
-	for i, chunk := range chunks {
-		result[i] = ChunkOutput{
-			Text:   chunk,
-			Vector: allEmbeddings[i],
+		for j, chunk := range batch {
+			ch <- ChunkOutput{
+				Text:   chunk,
+				Vector: embeddings[j],
+			}
 		}
 	}
-
-	return result, nil
 }
 
 func (sc *Chunker) chunkMarkdown(text string) ([]string, error) {

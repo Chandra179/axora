@@ -81,15 +81,11 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 			zap.String("title", content.Metadata.Title),
 		)
 
-		chunks, err := w.chunkingClient.ChunkText(content.TextMd, w.chunkMethod)
-		if err != nil {
-			w.logger.Error("failed to chunk text",
-				zap.String("url", url),
-				zap.Error(err))
-			return
-		}
+		ch := make(chan ChunkOutput)
+		go w.chunkingClient.ChunkText(content.TextMd, w.chunkMethod, ch)
 
-		for i, chunk := range chunks {
+		chunkIndex := 0
+		for chunk := range ch {
 			err := w.crawlVector.InsertOne(context.Background(), &CrawlVectorDoc{
 				URL:              url,
 				Content:          chunk.Text,
@@ -99,17 +95,17 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 			if err != nil {
 				w.logger.Error("failed to insert chunk",
 					zap.String("url", url),
-					zap.Int("chunk_index", i),
+					zap.Int("chunk_index", chunkIndex),
 					zap.Error(err))
-				continue
+			} else {
+				w.logger.Info("inserted chunk",
+					zap.String("url", url),
+					zap.Int("chunk_index", chunkIndex),
+					zap.Int("chunk_length", len(chunk.Text)),
+					zap.Int("vector_dim", len(chunk.Vector)),
+				)
 			}
-
-			w.logger.Info("inserted chunk",
-				zap.String("url", url),
-				zap.Int("chunk_index", i),
-				zap.Int("chunk_length", len(chunk.Text)),
-				zap.Int("vector_dim", len(chunk.Vector)),
-			)
+			chunkIndex++
 		}
 	}
 }

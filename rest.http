@@ -1,6 +1,18 @@
-# POST http://localhost:8080/browse?t=economy?m=md
+POST http://localhost:8002/seed
+Content-Type: application/json
 
-POST http://localhost:8002/seed?m=md?t=economy
+{
+  "topic": "economy",
+  "chunking_method": "md"
+}
+
+POST http://localhost:8080/browse
+Content-Type: application/json
+
+{
+  "topic": "economy",
+  "chunking_method": "md"
+}
 
 curl -X POST http://localhost:8000/embed \
   -H "Content-Type: application/json" \
