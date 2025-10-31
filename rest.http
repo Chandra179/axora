@@ -6,7 +6,7 @@ Content-Type: application/json
   "chunking_method": "md"
 }
 
-POST http://localhost:8080/browse
+POST http://localhost:8082/browse
 Content-Type: application/json
 
 {

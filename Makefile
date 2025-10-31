@@ -1,4 +1,5 @@
 rd:
+	DOCKER_BUILDKIT=1 docker compose up -d axora-qdrant 
 	DOCKER_BUILDKIT=1 docker compose up -d --build axora-crawler 
 	
 run:
@@ -10,36 +11,15 @@ all:
 ins:
 	go mod tidy && go mod vendor
 
-model:
-	docker exec -it axora-ollama ollama pull mistral:7b-instruct-q4_0
+pprof:
+	go tool pprof -http=:8082 http://localhost:8082/debug/pprof/heap
 
-stop:
-	docker compose down
-	
+goroutine:
+	go tool pprof -http=:8083 http://localhost:8082/debug/pprof/goroutine
 
-MIGRATIONS_PATH = ./migrations
+cpu:
+	go tool pprof -http=:8084 http://localhost:8082/debug/pprof/profile
 
-install-migrate:
-	@echo "Installing golang-migrate..."
-	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
-
-.PHONY: mig
-# Create a new migration file with timestamp
-# Usage: make mig <migration_name>
-# Example: make mig crawl_url
-mig:
-	@if [ -z "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
-		echo "Error: Please provide a migration name"; \
-		echo "Usage: make mig <migration_name>"; \
-		echo "Example: make mig crawl_url"; \
-		exit 1; \
-	fi
-	@mkdir -p $(MIGRATIONS_PATH)
-	@timestamp=$$(date -u +%Y%m%d%H%M%S); \
-	migration_name=$(filter-out $@,$(MAKECMDGOALS)); \
-	up_file="$(MIGRATIONS_PATH)/$${timestamp}_$${migration_name}.up.sql"; \
-	down_file="$(MIGRATIONS_PATH)/$${timestamp}_$${migration_name}.down.sql"; \
-	touch $$up_file $$down_file; \
-	echo "Created migration files:"; \
-	echo "  - $$up_file"; \
-	echo "  - $$down_file"
+test:
+	go tool pprof http://localhost:8082/debug/pprof/goroutine
+	go tool pprof http://localhost:8082/debug/pprof/heap

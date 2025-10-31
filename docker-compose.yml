@@ -20,15 +20,16 @@ services:
       MAX_EMBED_MODEL_TOKEN_SIZE: 480
       EMBED_MODEL_ID: BAAI/bge-base-en-v1.5
       TOKENIZER_FILE_PATH: /app/tokenizer.json
+      BOLTDB_PATH: /app/data/colly.db
     ports:
       - "8002:8002"
-      - "6060:6060"   # expose pprof
     networks:
       - axora-network
     volumes:
       - ./downloads:/app/downloads
       - ./domains.yaml:/app/domains.yaml
       - ./tokenizer.json:/app/tokenizer.json
+      - crawler-boltdb:/app/data
     depends_on:
       axora-tor-proxy:
         condition: service_started
@@ -125,3 +126,4 @@ networks:
 volumes:
   qdrant_storage:
   axora-mpnetbasev2-cache:
+  crawler-boltdb:

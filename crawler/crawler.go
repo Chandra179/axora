@@ -53,6 +53,7 @@ func NewCrawler(
 	crawlVector CrawlVectorRepo,
 	chunkingClient ChunkingClient,
 	domains []string,
+	boltDBPath string,
 ) (*Crawler, error) {
 	c := colly.NewCollector(
 		colly.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "+
@@ -72,7 +73,13 @@ func NewCrawler(
 		),
 		// colly.Debugger(&debug.LogDebugger{}),
 	)
-
+	storage := &BoltDBStorage{
+		DBPath: boltDBPath,
+	}
+	if err := storage.Init(); err != nil {
+		return nil, err
+	}
+	c.SetStorage(storage)
 	c.WithTransport(httpTransport)
 	c.SetClient(httpClient)
 	c.SetRequestTimeout(5 * time.Minute)

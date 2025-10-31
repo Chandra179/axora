@@ -3,13 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
-	_ "net/http/pprof"
+	"strings"
+
 	"net/url"
 	"strconv"
-	"strings"
-	"sync"
 	"time"
 
 	"axora/config"
@@ -32,13 +32,6 @@ type BrowseRequest struct {
 
 func main() {
 	// =========
-	// Profiling
-	// =========
-	go func() {
-		http.ListenAndServe(":6060", nil)
-	}()
-
-	// =========
 	// Config
 	// =========
 	cfg, err := config.Load()
@@ -50,11 +43,11 @@ func main() {
 	// =========
 	// Logging
 	// =========
-	logger, err := zap.NewProduction()
-	if err != nil {
-		log.Fatalf("failed to create logger: %v", err)
+	logger, errLog := zap.NewProduction()
+	if errLog != nil {
+		panic(errLog)
 	}
-	defer logger.Sync()
+	defer func() { _ = logger.Sync() }()
 
 	// =========
 	// Chromedp
@@ -69,13 +62,13 @@ func main() {
 	// =========
 	// Qdrant vector
 	// =========
-	qdb, err := qdrantClient.NewClient(cfg.QdrantHost, cfg.QdrantPort)
-	if err != nil {
-		log.Fatalf("Failed to initialize Weaviate: %v", err)
+	qdb, errQdrant := qdrantClient.NewClient(cfg.QdrantHost, cfg.QdrantPort)
+	if errQdrant != nil {
+		logger.Error("Failed to initialize qdrant: %v", zap.Error(errQdrant))
 	}
 	err = qdb.CreateCrawlCollection(context.Background())
 	if err != nil {
-		log.Fatalf("err: %v", err)
+		logger.Error("Failed to initialize crawl collection: %v", zap.Error(err))
 	}
 
 	// =========
@@ -86,16 +79,16 @@ func main() {
 	// =========
 	// Chunking Client
 	// =========
-	chunkingClient, err := crawler.NewChunker(cfg.MaxEmbedModelTokenSize, embeddingClient,
+	chunkingClient, errChunk := crawler.NewChunker(cfg.MaxEmbedModelTokenSize, embeddingClient,
 		logger, cfg.TokenizerFilePath)
-	if err != nil {
-		log.Fatalf("Failed to initialize chunking client: %v", err)
+	if errChunk != nil {
+		logger.Error("Failed to initialize chunk client: %v", zap.Error(errChunk))
 	}
 
 	// =========
 	// Crawler Service
 	// =========
-	crawlerInstance, err := crawler.NewCrawler(
+	crawlerInstance, errCrawl := crawler.NewCrawler(
 		cfg.ProxyURL,
 		httpClient,
 		httpTransport,
@@ -103,16 +96,16 @@ func main() {
 		qdb,
 		chunkingClient,
 		domains,
+		cfg.BoltDBPath,
 	)
-	if err != nil {
-		logger.Fatal("failed to create crawler", zap.Error(err))
+	if errCrawl != nil {
+		fmt.Println("errrrr " + errCrawl.Error())
+		logger.Info("Failed to initialize crawl: %v", zap.Error(errCrawl))
 	}
 
 	// =========
 	// HTTP handler func
 	// =========
-	ch := make(chan string)
-	var wg sync.WaitGroup
 	seedh := func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -131,21 +124,17 @@ func main() {
 			return
 		}
 
-		wg.Add(1)
+		ch := make(chan string)
+
 		go func() {
-			defer wg.Done()
 			err := crawlerInstance.Crawl(ch, req.ChunkingMethod, req.Topic)
 			if err != nil {
-				logger.Info("err crawl: " + err.Error())
+				logger.Error("crawl error", zap.Error(err))
 			}
 		}()
 
 		ch <- "https://en.wikipedia.org/wiki/Economy"
-
-		go func() {
-			wg.Wait()
-			close(ch)
-		}()
+		close(ch)
 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Crawl started"))
@@ -173,21 +162,17 @@ func main() {
 			return
 		}
 
-		wg.Add(1)
+		ch := make(chan string, 100)
+
 		go func() {
-			defer wg.Done()
 			err := crawlerInstance.Crawl(ch, req.ChunkingMethod, req.Topic)
 			if err != nil {
-				logger.Info("err crawl: " + err.Error())
+				logger.Error("crawl error", zap.Error(err))
 			}
 		}()
 
 		browser.CollectUrls(req.Topic, ch)
-
-		go func() {
-			wg.Wait()
-			close(ch)
-		}()
+		close(ch)
 
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("Crawl started"))
@@ -195,7 +180,9 @@ func main() {
 
 	http.HandleFunc("/seed", seedh)
 	http.HandleFunc("/browse", browseh)
-	log.Fatal(http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil))
+	if err := http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil); err != nil {
+		logger.Fatal("HTTP server failed", zap.Error(err))
+	}
 }
 
 func NewHttpClient(proxyUrl string) (*http.Client, *http.Transport) {

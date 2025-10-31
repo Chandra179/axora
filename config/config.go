@@ -16,6 +16,7 @@ type Config struct {
 	DomainWhiteListPath    string
 	EmbedModelID           string
 	TokenizerFilePath      string
+	BoltDBPath             string
 	QdrantPort             int
 	MaxEmbedModelTokenSize int
 	AppPort                int
@@ -43,6 +44,7 @@ func Load() (*Config, error) {
 		MpnetBaseV2Url:         getEnv("MPNET_BASEV2_URL"),
 		DomainWhiteListPath:    getEnv("DOMAIN_WHITELIST_PATH"),
 		TokenizerFilePath:      getEnv("TOKENIZER_FILE_PATH"),
+		BoltDBPath:             getEnv("BOLTDB_PATH"),
 		MaxEmbedModelTokenSize: tokenSize,
 		QdrantPort:             qdrantPort,
 		AppPort:                appPort,
