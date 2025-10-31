@@ -23,6 +23,7 @@ services:
       BOLTDB_PATH: /app/data/colly.db
     ports:
       - "8002:8002"
+      - "6060:6060"
     networks:
       - axora-network
     volumes:

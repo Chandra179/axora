@@ -64,11 +64,11 @@ func main() {
 	// =========
 	qdb, errQdrant := qdrantClient.NewClient(cfg.QdrantHost, cfg.QdrantPort)
 	if errQdrant != nil {
-		logger.Error("Failed to initialize qdrant: %v", zap.Error(errQdrant))
+		logger.Error("Failed to initialize qdrant", zap.Error(errQdrant))
 	}
 	err = qdb.CreateCrawlCollection(context.Background())
 	if err != nil {
-		logger.Error("Failed to initialize crawl collection: %v", zap.Error(err))
+		logger.Error("Failed to initialize crawl collection", zap.Error(err))
 	}
 
 	// =========
@@ -82,7 +82,7 @@ func main() {
 	chunkingClient, errChunk := crawler.NewChunker(cfg.MaxEmbedModelTokenSize, embeddingClient,
 		logger, cfg.TokenizerFilePath)
 	if errChunk != nil {
-		logger.Error("Failed to initialize chunk client: %v", zap.Error(errChunk))
+		logger.Error("Failed to initialize chunk client", zap.Error(errChunk))
 	}
 
 	// =========
@@ -99,8 +99,7 @@ func main() {
 		cfg.BoltDBPath,
 	)
 	if errCrawl != nil {
-		fmt.Println("errrrr " + errCrawl.Error())
-		logger.Info("Failed to initialize crawl: %v", zap.Error(errCrawl))
+		logger.Info("Failed to initialize crawl", zap.Error(errCrawl))
 	}
 
 	// =========
@@ -180,8 +179,10 @@ func main() {
 
 	http.HandleFunc("/seed", seedh)
 	http.HandleFunc("/browse", browseh)
+
+	fmt.Println("serveeee")
 	if err := http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil); err != nil {
-		logger.Fatal("HTTP server failed", zap.Error(err))
+		logger.Error("HTTP server failed", zap.Error(err))
 	}
 }
 
