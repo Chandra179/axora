@@ -3,6 +3,8 @@ package crawler
 import (
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sync"
 
 	"github.com/gocolly/colly/v2/storage"
@@ -19,6 +21,11 @@ type BoltDBStorage struct {
 
 // Init initializes the BoltDB database
 func (s *BoltDBStorage) Init() error {
+	dbDir := filepath.Dir(s.DBPath)
+	if err := os.MkdirAll(dbDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory for BoltDB: %w", err)
+	}
+
 	db, err := bolt.Open(s.DBPath, 0600, nil)
 	if err != nil {
 		return fmt.Errorf("failed to open BoltDB: %w", err)

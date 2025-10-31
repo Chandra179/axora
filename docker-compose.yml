@@ -30,7 +30,7 @@ services:
       - ./downloads:/app/downloads
       - ./domains.yaml:/app/domains.yaml
       - ./tokenizer.json:/app/tokenizer.json
-      - crawler-boltdb:/app/data
+      - ./data:/app/data
     depends_on:
       axora-tor-proxy:
         condition: service_started
