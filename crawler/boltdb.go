@@ -22,8 +22,16 @@ type BoltDBStorage struct {
 // Init initializes the BoltDB database
 func (s *BoltDBStorage) Init() error {
 	dbDir := filepath.Dir(s.DBPath)
-	if err := os.MkdirAll(dbDir, 0755); err != nil {
-		return fmt.Errorf("failed to create directory for BoltDB: %w", err)
+
+	if _, err := os.Stat(dbDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(dbDir, 0755); err != nil {
+			return fmt.Errorf("failed to create directory for BoltDB: %w", err)
+		}
+	}
+
+	dbExists := true
+	if _, err := os.Stat(s.DBPath); os.IsNotExist(err) {
+		dbExists = false
 	}
 
 	db, err := bolt.Open(s.DBPath, 0600, nil)
@@ -31,13 +39,15 @@ func (s *BoltDBStorage) Init() error {
 		return fmt.Errorf("failed to open BoltDB: %w", err)
 	}
 
-	err = db.Update(func(tx *bolt.Tx) error {
-		_, err := tx.CreateBucketIfNotExists(bucketName)
-		return err
-	})
-	if err != nil {
-		db.Close()
-		return fmt.Errorf("failed to create bucket: %w", err)
+	if !dbExists {
+		err = db.Update(func(tx *bolt.Tx) error {
+			_, err := tx.CreateBucketIfNotExists(bucketName)
+			return err
+		})
+		if err != nil {
+			db.Close()
+			return fmt.Errorf("failed to create bucket: %w", err)
+		}
 	}
 
 	s.db = db

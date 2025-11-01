@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"strings"
 
 	"net/url"
@@ -31,6 +32,10 @@ type BrowseRequest struct {
 }
 
 func main() {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+
 	// =========
 	// Config
 	// =========
@@ -99,7 +104,7 @@ func main() {
 		cfg.BoltDBPath,
 	)
 	if errCrawl != nil {
-		logger.Info("Failed to initialize crawl", zap.Error(errCrawl))
+		logger.Error("Failed to initialize crawl", zap.Error(errCrawl))
 	}
 
 	// =========

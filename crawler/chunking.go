@@ -17,7 +17,7 @@ type ChunkOutput struct {
 }
 
 type ChunkingClient interface {
-	ChunkText(text string, chunkType string, ch chan<- ChunkOutput)
+	ChunkText(text string, chunkType string) ([]ChunkOutput, error)
 }
 
 type Chunker struct {
@@ -45,9 +45,7 @@ func NewChunker(maxTokens int, embed embedding.Client, logger *zap.Logger,
 	}, nil
 }
 
-func (sc *Chunker) ChunkText(text string, chunkType string, ch chan<- ChunkOutput) {
-	defer close(ch)
-
+func (sc *Chunker) ChunkText(text string, chunkType string) ([]ChunkOutput, error) {
 	var chunks []string
 	var err error
 
@@ -57,18 +55,18 @@ func (sc *Chunker) ChunkText(text string, chunkType string, ch chan<- ChunkOutpu
 	case "sen":
 		chunks, err = sc.chunkSentence(text)
 	default:
-		sc.logger.Error("unsupported chunk type", zap.String("type", chunkType))
-		return
+		return nil, fmt.Errorf("unsupported chunk type: %s", chunkType)
 	}
 
 	if err != nil {
-		sc.logger.Error("failed to chunk text", zap.Error(err))
-		return
+		return nil, fmt.Errorf("failed to chunk text: %w", err)
 	}
 
 	if len(chunks) == 0 {
-		return
+		return []ChunkOutput{}, nil
 	}
+
+	var results []ChunkOutput
 
 	for i := 0; i < len(chunks); i += sc.maxBatchSize {
 		end := i + sc.maxBatchSize
@@ -87,12 +85,14 @@ func (sc *Chunker) ChunkText(text string, chunkType string, ch chan<- ChunkOutpu
 		}
 
 		for j, chunk := range batch {
-			ch <- ChunkOutput{
+			results = append(results, ChunkOutput{
 				Text:   chunk,
 				Vector: embeddings[j],
-			}
+			})
 		}
 	}
+
+	return results, nil
 }
 
 func (sc *Chunker) chunkMarkdown(text string) ([]string, error) {
