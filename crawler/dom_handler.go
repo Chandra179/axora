@@ -22,6 +22,20 @@ func (w *Crawler) OnHTML() colly.HTMLCallback {
 			w.logger.Debug("skipping low-value URL", zap.String("url", absoluteURL))
 			return
 		}
+		if err := w.storage.Visited(uint64(e.Request.ID)); err != nil {
+			w.logger.Error("failed mark as visited", zap.Error(err))
+			return
+		}
+		isVisited, err := w.storage.IsVisited(uint64(e.Request.ID))
+		if isVisited {
+			e.Request.Abort()
+			return
+		}
+		if err != nil {
+			w.logger.Error("failed check is visited", zap.Error(err))
+			e.Request.Abort()
+			return
+		}
 		e.Request.Visit(absoluteURL)
 	}
 }
@@ -81,11 +95,15 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 			zap.String("title", content.Metadata.Title),
 		)
 
-		ch := make(chan ChunkOutput)
-		go w.chunkingClient.ChunkText(content.TextMd, w.chunkMethod, ch)
+		chunks, err := w.chunkingClient.ChunkText(content.TextMd, w.chunkMethod)
+		if err != nil {
+			w.logger.Error("failed to chunk text",
+				zap.String("url", url),
+				zap.Error(err))
+			return
+		}
 
-		chunkIndex := 0
-		for chunk := range ch {
+		for chunkIndex, chunk := range chunks {
 			err := w.crawlVector.InsertOne(context.Background(), &CrawlVectorDoc{
 				URL:              url,
 				Content:          chunk.Text,
@@ -105,7 +123,6 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 					zap.Int("vector_dim", len(chunk.Vector)),
 				)
 			}
-			chunkIndex++
 		}
 	}
 }

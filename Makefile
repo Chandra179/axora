@@ -1,45 +1,46 @@
-rd:
+kill-ports:
+	# Kill ports 8082–8084
+	@lsof -ti :8082 | xargs -r kill -9 || true
+	@lsof -ti :8083 | xargs -r kill -9 || true
+	@lsof -ti :8084 | xargs -r kill -9 || true
+
+.PHONY: rd wait-for-pprof
+
+wait-for-pprof:
+	@echo "⏳ waiting for pprof to be ready at localhost:8002..."
+	@until curl -s http://localhost:8002/debug/pprof/ > /dev/null; do \
+		printf "."; \
+		sleep 1; \
+	done
+	@echo " ✅ pprof endpoint ready!"
+
+rd: kill-ports
+	DOCKER_BUILDKIT=1 docker compose up -d axora-qdrant 
 	DOCKER_BUILDKIT=1 docker compose up -d --build axora-crawler 
 	
+	$(MAKE) wait-for-pprof
+
+	go tool pprof -http=:8082 http://localhost:8002/debug/pprof/heap &
+	go tool pprof -http=:8083 http://localhost:8002/debug/pprof/goroutine &
 run:
 	DOCKER_BUILDKIT=1 docker compose up -d
 
 all:
-	DOCKER_BUILDKIT=1 docker compose up -d --build 
+	DOCKER_BUILDKIT=1 docker compose up -d --build
 
 ins:
 	go mod tidy && go mod vendor
 
-model:
-	docker exec -it axora-ollama ollama pull mistral:7b-instruct-q4_0
+heap:
+	go tool pprof -http=:8082 http://localhost:8002/debug/pprof/heap &
 
-stop:
-	docker compose down
-	
+gor:
+	go tool pprof -http=:8083 http://localhost:8002/debug/pprof/goroutine &
 
-MIGRATIONS_PATH = ./migrations
+cpu:
+	go tool pprof -http=:8084 http://localhost:8002/debug/pprof/profile &
 
-install-migrate:
-	@echo "Installing golang-migrate..."
-	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
-
-.PHONY: mig
-# Create a new migration file with timestamp
-# Usage: make mig <migration_name>
-# Example: make mig crawl_url
-mig:
-	@if [ -z "$(filter-out $@,$(MAKECMDGOALS))" ]; then \
-		echo "Error: Please provide a migration name"; \
-		echo "Usage: make mig <migration_name>"; \
-		echo "Example: make mig crawl_url"; \
-		exit 1; \
-	fi
-	@mkdir -p $(MIGRATIONS_PATH)
-	@timestamp=$$(date -u +%Y%m%d%H%M%S); \
-	migration_name=$(filter-out $@,$(MAKECMDGOALS)); \
-	up_file="$(MIGRATIONS_PATH)/$${timestamp}_$${migration_name}.up.sql"; \
-	down_file="$(MIGRATIONS_PATH)/$${timestamp}_$${migration_name}.down.sql"; \
-	touch $$up_file $$down_file; \
-	echo "Created migration files:"; \
-	echo "  - $$up_file"; \
-	echo "  - $$down_file"
+test:
+	go tool pprof http://localhost:8002/debug/pprof/goroutine
+	go tool pprof http://localhost:8002/debug/pprof/heap
+	go tool pprof http://localhost:8002/debug/pprof/profile?seconds=30

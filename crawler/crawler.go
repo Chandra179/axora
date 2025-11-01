@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gocolly/colly/v2"
+	"github.com/gocolly/colly/v2/storage"
 	"go.uber.org/zap"
 )
 
@@ -41,6 +42,7 @@ type Crawler struct {
 	proxyUrl       string
 	crawlVector    CrawlVectorRepo
 	chunkingClient ChunkingClient
+	storage        storage.Storage
 	chunkMethod    string
 	topic          string
 }
@@ -53,11 +55,12 @@ func NewCrawler(
 	crawlVector CrawlVectorRepo,
 	chunkingClient ChunkingClient,
 	domains []string,
+	boltDBPath string,
 ) (*Crawler, error) {
 	c := colly.NewCollector(
 		colly.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "+
 			"(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
-		// colly.MaxDepth(2),
+		colly.MaxDepth(2),
 		colly.Async(true),
 		colly.TraceHTTP(),
 		colly.ParseHTTPErrorResponse(),
@@ -72,16 +75,24 @@ func NewCrawler(
 		),
 		// colly.Debugger(&debug.LogDebugger{}),
 	)
-
+	storage := &BoltDBStorage{
+		DBPath: boltDBPath,
+	}
+	if err := c.SetStorage(storage); err != nil {
+		return nil, err
+	}
 	c.WithTransport(httpTransport)
 	c.SetClient(httpClient)
 	c.SetRequestTimeout(5 * time.Minute)
-	c.Limit(&colly.LimitRule{
+	err := c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 3,
-		Delay:       15 * time.Second,
+		Parallelism: 10,
+		Delay:       5 * time.Second,
 		RandomDelay: 3 * time.Second,
 	})
+	if err != nil {
+		return nil, err
+	}
 	c.IgnoreRobotsTxt = true
 
 	worker := &Crawler{
@@ -91,6 +102,7 @@ func NewCrawler(
 		proxyUrl:       proxyUrl,
 		crawlVector:    crawlVector,
 		chunkingClient: chunkingClient,
+		storage:        storage,
 	}
 
 	return worker, nil

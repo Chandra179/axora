@@ -15,6 +15,7 @@ require (
 	github.com/markusmobius/go-trafilatura v1.12.2
 	github.com/qdrant/go-client v1.15.2
 	github.com/tmc/langchaingo v0.1.14
+	go.etcd.io/bbolt v1.4.3
 	go.uber.org/zap v1.27.0
 	golang.org/x/net v0.44.0
 	gopkg.in/yaml.v3 v3.0.1
