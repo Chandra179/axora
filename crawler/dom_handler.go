@@ -22,22 +22,19 @@ func (w *Crawler) OnHTML() colly.HTMLCallback {
 			w.logger.Debug("skipping low-value URL", zap.String("url", absoluteURL))
 			return
 		}
-		if err := w.storage.Visited(uint64(e.Request.ID)); err != nil {
-			w.logger.Error("failed mark as visited", zap.Error(err))
-			return
+		if err := e.Request.Visit(absoluteURL); err != nil {
+			w.logger.Error("Error visit", zap.Error(err))
 		}
-		isVisited, err := w.storage.IsVisited(uint64(e.Request.ID))
-		if isVisited {
-			e.Request.Abort()
-			return
-		}
-		if err != nil {
-			w.logger.Error("failed check is visited", zap.Error(err))
-			e.Request.Abort()
-			return
-		}
-		e.Request.Visit(absoluteURL)
 	}
+}
+
+func (w *Crawler) OnRequest() colly.RequestCallback {
+	return (func(r *colly.Request) {
+		if shouldSkipURL(r.URL.String()) {
+			w.logger.Warn("skip visit", zap.String("url", r.URL.String()))
+			r.Abort()
+		}
+	})
 }
 
 var skipPattern = regexp.MustCompile(`(?i)(contact|privacy|terms|faq|tag|archive|about|signin|login|register|

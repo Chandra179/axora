@@ -60,7 +60,7 @@ func NewCrawler(
 	c := colly.NewCollector(
 		colly.UserAgent("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "+
 			"(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"),
-		colly.MaxDepth(2),
+		colly.MaxDepth(3),
 		colly.Async(true),
 		colly.TraceHTTP(),
 		colly.ParseHTTPErrorResponse(),
@@ -86,7 +86,7 @@ func NewCrawler(
 	c.SetRequestTimeout(5 * time.Minute)
 	err := c.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
-		Parallelism: 10,
+		Parallelism: 5,
 		Delay:       5 * time.Second,
 		RandomDelay: 3 * time.Second,
 	})
@@ -110,6 +110,7 @@ func NewCrawler(
 
 func (w *Crawler) Crawl(urls chan string, chunkMethod string, topic string) error {
 	w.collector.OnHTML("a[href]", w.OnHTML())
+	w.collector.OnRequest(w.OnRequest())
 	// w.collector.OnHTML("body", w.OnHTMLDOMLog(ctx))
 	w.collector.OnError(w.OnError(w.collector))
 	w.collector.OnResponse(w.OnResponse())
