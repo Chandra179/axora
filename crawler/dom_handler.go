@@ -23,7 +23,7 @@ func (w *Crawler) OnHTML() colly.HTMLCallback {
 			return
 		}
 		if err := e.Request.Visit(absoluteURL); err != nil {
-			w.logger.Error("Error visit", zap.Error(err))
+			w.logger.Error("Error visit", zap.String("url", absoluteURL), zap.Error(err))
 		}
 	}
 }
@@ -62,7 +62,9 @@ func (w *Crawler) OnError(collector *colly.Collector) colly.ErrorCallback {
 func (w *Crawler) OnResponse() colly.ResponseCallback {
 	return func(r *colly.Response) {
 		url := r.Request.URL.String()
-		w.logger.Info("url_log", zap.String("url", url))
+		w.logger.Info("url",
+			zap.String("url", url),
+			zap.Int("body_len", len(r.Body)))
 
 		doc, err := goquery.NewDocumentFromReader(bytes.NewReader(r.Body))
 		if err != nil {
@@ -70,8 +72,9 @@ func (w *Crawler) OnResponse() colly.ResponseCallback {
 			return
 		}
 
-		isMetaRelevant := isMetaRelevant(doc, w.topic)
+		isMetaRelevant := w.isMetaRelevant(doc, w.topic)
 		if !isMetaRelevant {
+			w.logger.Info("meta not relevant", zap.String("url", url))
 			return
 		}
 
@@ -173,16 +176,19 @@ func isTopicRelevant(text, topic string) bool {
 	return false
 }
 
-func isMetaRelevant(doc *goquery.Document, topic string) bool {
+func (w *Crawler) isMetaRelevant(doc *goquery.Document, topic string) bool {
 	var isRelevant bool
 	meta := doc.Find("title").Text()
-
 	metas := doc.Find("meta")
+	w.logger.Info("meta", zap.Int("len", metas.Length()))
+
 	for i := 0; i < metas.Length(); i++ {
 		s := metas.Eq(i)
 		name, _ := s.Attr("name")
 		prop, _ := s.Attr("property")
 		content, _ := s.Attr("content")
+
+		w.logger.Info("meta", zap.String("test", meta+name+prop+content))
 
 		if isTopicRelevant(meta+name+prop+content, topic) {
 			isRelevant = true

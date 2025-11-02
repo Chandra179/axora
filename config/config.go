@@ -61,9 +61,10 @@ func getEnv(key string) string {
 
 type DomainConfig struct {
 	Domains []string `yaml:"domains"`
+	Seeds   []string `yaml:"seeds"`
 }
 
-func LoadDomains(path string) []string {
+func LoadDomains(path string) *DomainConfig {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		log.Fatalf("Failed to read YAML file: %v", err)
@@ -74,5 +75,5 @@ func LoadDomains(path string) []string {
 		log.Fatalf("Failed to parse YAML: %v", err)
 	}
 
-	return cfg.Domains
+	return &cfg
 }

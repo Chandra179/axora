@@ -1,2 +1,7 @@
 domains:
   - en.wikipedia.org
+  - investopedia.com
+
+seeds:
+  - https://en.wikipedia.org/wiki/Economy
+  - https://www.investopedia.com/economy-4689801

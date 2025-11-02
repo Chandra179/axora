@@ -32,19 +32,6 @@ type BrowseRequest struct {
 }
 
 func main() {
-	go func() {
-		log.Println(http.ListenAndServe("localhost:6060", nil))
-	}()
-
-	// =========
-	// Config
-	// =========
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
-	}
-	domains := config.LoadDomains(cfg.DomainWhiteListPath)
-
 	// =========
 	// Logging
 	// =========
@@ -53,6 +40,22 @@ func main() {
 		panic(errLog)
 	}
 	defer func() { _ = logger.Sync() }()
+
+	// =========
+	// Config
+	// =========
+	cfg, errCfg := config.Load()
+	if errCfg != nil {
+		logger.Error("err load cfg", zap.Error(errCfg))
+	}
+	domains := config.LoadDomains(cfg.DomainWhiteListPath)
+
+	// =========
+	// Profiling
+	// =========
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	// =========
 	// Chromedp
@@ -71,7 +74,7 @@ func main() {
 	if errQdrant != nil {
 		logger.Error("Failed to initialize qdrant", zap.Error(errQdrant))
 	}
-	err = qdb.CreateCrawlCollection(context.Background())
+	err := qdb.CreateCrawlCollection(context.Background())
 	if err != nil {
 		logger.Error("Failed to initialize crawl collection", zap.Error(err))
 	}
@@ -100,7 +103,7 @@ func main() {
 		logger,
 		qdb,
 		chunkingClient,
-		domains,
+		domains.Domains,
 		cfg.BoltDBPath,
 	)
 	if errCrawl != nil {
@@ -137,7 +140,9 @@ func main() {
 			}
 		}()
 
-		ch <- "https://en.wikipedia.org/wiki/Economy"
+		for _, d := range domains.Seeds {
+			ch <- d
+		}
 		close(ch)
 
 		w.WriteHeader(http.StatusOK)
@@ -185,7 +190,7 @@ func main() {
 	http.HandleFunc("/seed", seedh)
 	http.HandleFunc("/browse", browseh)
 
-	fmt.Println("serveeee")
+	fmt.Println("start")
 	if err := http.ListenAndServe(":"+strconv.Itoa(cfg.AppPort), nil); err != nil {
 		logger.Error("HTTP server failed", zap.Error(err))
 	}
